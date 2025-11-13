@@ -33,11 +33,18 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY . .
 
+# Copy and set permissions for entrypoint
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
 USER appuser
+
+# Set entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Expose port
 EXPOSE 8000
