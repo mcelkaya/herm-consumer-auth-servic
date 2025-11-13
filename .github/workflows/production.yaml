@@ -17,7 +17,7 @@ jobs:
       AWS_DEFAULT_REGION: eu-central-1
     steps:
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4  # Use v4
         with:
           aws-region: eu-central-1
           role-to-assume: arn:aws:iam::251821306304:role/GithubActionsRole
