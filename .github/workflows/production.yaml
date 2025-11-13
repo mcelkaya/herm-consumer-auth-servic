@@ -1,0 +1,60 @@
+name: Deploy to Production
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [ main ]
+
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+    env:
+      ECR_REPOSITORY: auth
+      AWS_DEFAULT_REGION: eu-central-1
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: eu-central-1
+          role-to-assume: arn:aws:iam::251821306304:role/GithubActionsRole
+          role-session-name: GithubActionsRole
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Extract tag name
+        run: echo "IMAGE_TAG=$(echo $GITHUB_REF | cut -d '/' -f 3)" >> $GITHUB_ENV
+
+      - name: Login to Amazon ECR
+        with:
+          mask-password: true
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        run: |
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      - name: Replace image tag in task definition
+        run: |
+          sed -i 's/__IMAGE_TAG__/${{ env.IMAGE_TAG }}/g' ecs-task-definitions/production.json
+
+      - name: Update ECS task definition
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ecs-task-definitions/production.json
+          container-name: auth
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs-task-definitions/production.json
+          service: prod-auth
+          cluster: prod-ecs-cluster
+          force-new-deployment: true

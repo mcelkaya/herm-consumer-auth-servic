@@ -1,9 +1,9 @@
 ### Signup - Register a new user
-POST http://localhost:8000/api/v1/auth/signup
+POST http://localhost:8000/herm-auth/api/v1/auth/signup
 Content-Type: application/json
 
 {
-  "email": "test2@example.com",
+  "email": "test99@example.com",
   "password": "SecurePassword123!"
 }
 
@@ -21,7 +21,7 @@ Content-Type: application/json
 ###
 
 ### Login - Authenticate existing user
-POST http://localhost:8000/api/v1/auth/login
+POST http://localhost:8000/herm-auth/api/v1/auth/login
 Content-Type: application/json
 
 {
@@ -42,7 +42,21 @@ Content-Type: application/json
 
 ### Get Current User - Using stored access token
 
-GET http://localhost:8000/api/v1/auth/me
+GET http://localhost:8000/herm-auth/api/v1/auth/me
+Authorization: Bearer {{access_token}}
+
+> {%
+    client.test("Get user successful", function() {
+        client.assert(response.status === 200, "Response status is not 200");
+    });
+%}
+
+###
+
+
+### health
+
+GET http://localhost:8000/herm-auth/health
 Authorization: Bearer {{access_token}}
 
 > {%

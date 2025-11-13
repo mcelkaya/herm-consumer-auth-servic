@@ -1,0 +1,155 @@
+{
+    "containerDefinitions": [
+        {
+            "name": "prod-auth",
+            "image": "251821306304.dkr.ecr.eu-central-1.amazonaws.com/auth:__IMAGE_TAG__",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "name": "backend-8000-tcp",
+                    "containerPort": 8000,
+                    "hostPort": 8000,
+                    "protocol": "tcp",
+                    "appProtocol": "http"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "ENVIRONMENT",
+                    "value": "production"
+                },
+                {
+                    "name": "ALGORITHM",
+                    "value": "HS256"
+                },
+                {
+                    "name": "ACCESS_TOKEN_EXPIRE_MINUTES",
+                    "value": "30"
+                },
+                {
+                    "name": "REFRESH_TOKEN_EXPIRE_DAYS",
+                    "value": "7"
+                },
+                {
+                    "name": "DATABASE_POOL_SIZE",
+                    "value": "20"
+                },
+                {
+                    "name": "DATABASE_MAX_OVERFLOW",
+                    "value": "10"
+                },
+                {
+                    "name": "DATABASE_SCHEMA",
+                    "value": "herm_auth"
+                },
+                {
+                    "name": "REDIS_URL",
+                    "value": "redis://localhost:7379/0"
+                },
+                {
+                    "name": "AWS_REGION",
+                    "value": "eu-central-1"
+                },
+                {
+                    "name": "LOG_LEVEL",
+                    "value": "INFO"
+                }
+            ],
+            "environmentFiles": [],
+            "mountPoints": [],
+            "volumesFrom": [],
+            "secrets": [
+                {
+                    "name": "DATABASE_URL",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_auth_database_url"
+                },
+                {
+                    "name": "SECRET_KEY",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_secret_key"
+                },
+                {
+                    "name": "GOOGLE_CLIENT_ID",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_google_client_id"
+                },
+                {
+                    "name": "GOOGLE_CLIENT_SECRET",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_google_client_secret"
+                },
+                {
+                    "name": "GOOGLE_REDIRECT_URI",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_google_redirect_uri"
+                },
+                {
+                    "name": "MICROSOFT_CLIENT_ID",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_microsoft_client_id"
+                },
+                {
+                    "name": "MICROSOFT_CLIENT_SECRET",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_microsoft_client_secret"
+                },
+                {
+                    "name": "MICROSOFT_REDIRECT_URI",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_microsoft_redirect_uri"
+                },
+                {
+                    "name": "YAHOO_CLIENT_ID",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_yahoo_client_id"
+                },
+                {
+                    "name": "YAHOO_CLIENT_SECRET",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_yahoo_client_secret"
+                },
+                {
+                    "name": "YAHOO_REDIRECT_URI",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_yahoo_redirect_uri"
+                },
+                {
+                    "name": "AWS_ACCESS_KEY_ID",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_aws_access_key_id"
+                },
+                {
+                    "name": "AWS_SECRET_ACCESS_KEY",
+                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_aws_secret_access_key"
+                }
+
+            ],
+            "ulimits": [],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-create-group": "true",
+                    "awslogs-group": "prod/ecs/auth-logs",
+                    "awslogs-region": "eu-central-1",
+                    "awslogs-stream-prefix": "ecs"
+                },
+                "secretOptions": []
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8000/herm-auth/health || exit 1"
+                ],
+                "interval": 60,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 210
+            }
+        }
+    ],
+    "family": "prod-auth",
+    "executionRoleArn": "arn:aws:iam::251821306304:role/ecsTaskExecutionRole",
+    "taskRoleArn": "arn:aws:iam::251821306304:role/ecsTaskExecutionRole",
+    "networkMode": "awsvpc",
+    "volumes": [],
+    "placementConstraints": [],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+    }
+}

@@ -7,7 +7,7 @@ from app.api.v1 import auth, connected_apps, oauth
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Email Integration Microservice for Consumer Applications",
+    description="Herm Auth Service",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -23,7 +23,7 @@ app.add_middleware(
 
 
 # Health check endpoint
-@app.get("/health", status_code=status.HTTP_200_OK)
+@app.get("/herm-auth/health", status_code=status.HTTP_200_OK)
 async def health_check():
     """Health check endpoint"""
     return {
@@ -34,9 +34,9 @@ async def health_check():
 
 
 # Include routers
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(connected_apps.router, prefix="/api/v1")
-app.include_router(oauth.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/herm-auth/api/v1")
+app.include_router(connected_apps.router, prefix="/herm-auth/api/v1")
+app.include_router(oauth.router, prefix="/herm-auth/api/v1")
 
 
 # Exception handlers
