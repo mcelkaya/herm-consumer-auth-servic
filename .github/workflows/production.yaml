@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: Production
+    permissions:
+      id-token: write   # Required for OIDC
+      contents: read    # Required for actions/checkout
     env:
       ECR_REPOSITORY: auth
       AWS_DEFAULT_REGION: eu-central-1
