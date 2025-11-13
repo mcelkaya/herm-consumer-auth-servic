@@ -1,7 +1,7 @@
 {
     "containerDefinitions": [
         {
-            "name": "auth",
+            "name": "prod-auth",
             "image": "251821306304.dkr.ecr.eu-central-1.amazonaws.com/auth:__IMAGE_TAG__",
             "cpu": 0,
             "portMappings": [
