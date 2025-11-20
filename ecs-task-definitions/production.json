@@ -124,16 +124,6 @@
                     "awslogs-stream-prefix": "ecs"
                 },
                 "secretOptions": []
-            },
-            "healthCheck": {
-                "command": [
-                    "CMD-SHELL",
-                    "curl -f http://localhost:8000/herm-auth/health || exit 1"
-                ],
-                "interval": 60,
-                "timeout": 5,
-                "retries": 3,
-                "startPeriod": 210
             }
         }
     ],
@@ -146,8 +136,8 @@
     "requiresCompatibilities": [
         "FARGATE"
     ],
-    "cpu": "1024",
-    "memory": "2048",
+    "cpu": "512",
+    "memory": "1024",
     "runtimePlatform": {
         "cpuArchitecture": "X86_64",
         "operatingSystemFamily": "LINUX"
