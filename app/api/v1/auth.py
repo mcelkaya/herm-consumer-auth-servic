@@ -4,14 +4,17 @@ from typing import Optional
 from app.db.session import get_db
 from app.schemas.user import (
     UserSignup, UserLogin, TokenResponse, UserResponse,
-    RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse
+    RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse,
+    ResetPasswordRequest, ResetPasswordResponse
 )
 from app.services.user_service import UserService
 from app.services.token_service import TokenService, create_access_token
 from app.services.forgot_password_service import ForgotPasswordService
+from app.services.reset_password_service import ResetPasswordService
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.core.config import settings
+from app.middleware.rate_limit import rate_limit_forgot_password, rate_limit_reset_password
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -227,13 +230,16 @@ async def logout_all_devices(
 async def forgot_password(
     request_data: ForgotPasswordRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_forgot_password)
 ) -> ForgotPasswordResponse:
     """
     Send password reset email if account exists.
 
     SECURITY NOTE: Always returns 200 to prevent email enumeration.
     Never reveals whether an email exists in the system.
+
+    Rate Limit: 3 requests per 15 minutes per IP address
 
     - **email**: Email address to send reset link to
     """
@@ -250,3 +256,38 @@ async def forgot_password(
 
     # ALWAYS return success message (don't reveal if email exists)
     return ForgotPasswordResponse()
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse, status_code=status.HTTP_200_OK)
+async def reset_password(
+    request_data: ResetPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_reset_password)
+) -> ResetPasswordResponse:
+    """
+    Reset password using token from email
+
+    Rate Limit: 5 requests per 15 minutes per IP address
+
+    - **token**: Password reset token from email
+    - **new_password**: New password (minimum 8 characters)
+
+    Raises:
+        400: Invalid or expired token
+        404: User not found
+        403: User account is inactive
+        429: Too many requests (rate limit exceeded)
+    """
+    # Get client IP for audit trail
+    ip_address = request.client.host if request.client else None
+
+    # Process password reset
+    service = ResetPasswordService(db)
+    await service.reset_password(
+        token=request_data.token,
+        new_password=request_data.new_password,
+        ip_address=ip_address
+    )
+
+    return ResetPasswordResponse()
