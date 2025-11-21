@@ -6,6 +6,8 @@ from app.repositories.user_repository import UserRepository
 from app.core.security import security_service
 from app.schemas.user import UserSignup, UserLogin, TokenResponse, UserResponse
 from app.models.user import User
+from app.services.token_service import TokenService, create_access_token
+from app.core.config import settings
 
 
 class UserService:
@@ -14,8 +16,14 @@ class UserService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.user_repo = UserRepository(db)
+        self.token_service = TokenService(db)
     
-    async def signup(self, signup_data: UserSignup) -> TokenResponse:
+    async def signup(
+        self,
+        signup_data: UserSignup,
+        device_info: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> TokenResponse:
         """Register a new user"""
         # Check if user already exists
         existing_user = await self.user_repo.get_by_email(signup_data.email)
@@ -24,28 +32,34 @@ class UserService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
-        
+
         # Hash password and create user
         hashed_password = security_service.get_password_hash(signup_data.password)
         user = await self.user_repo.create(
             email=signup_data.email,
             hashed_password=hashed_password
         )
-        
+
         # Generate tokens
-        access_token = security_service.create_access_token(
-            data={"sub": str(user.id), "email": user.email}
+        access_token = create_access_token(user)
+        refresh_token = await self.token_service.create_refresh_token(
+            user=user,
+            device_info=device_info,
+            ip_address=ip_address
         )
-        refresh_token = security_service.create_refresh_token(
-            data={"sub": str(user.id)}
-        )
-        
+
         return TokenResponse(
             access_token=access_token,
-            refresh_token=refresh_token
+            refresh_token=refresh_token.token,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         )
     
-    async def login(self, login_data: UserLogin) -> TokenResponse:
+    async def login(
+        self,
+        login_data: UserLogin,
+        device_info: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> TokenResponse:
         """Authenticate user and return tokens"""
         # Get user by email
         user = await self.user_repo.get_by_email(login_data.email)
@@ -54,32 +68,33 @@ class UserService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
-        
+
         # Verify password
         if not security_service.verify_password(login_data.password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
-        
+
         # Check if user is active
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is inactive"
             )
-        
+
         # Generate tokens
-        access_token = security_service.create_access_token(
-            data={"sub": str(user.id), "email": user.email}
+        access_token = create_access_token(user)
+        refresh_token = await self.token_service.create_refresh_token(
+            user=user,
+            device_info=device_info,
+            ip_address=ip_address
         )
-        refresh_token = security_service.create_refresh_token(
-            data={"sub": str(user.id)}
-        )
-        
+
         return TokenResponse(
             access_token=access_token,
-            refresh_token=refresh_token
+            refresh_token=refresh_token.token,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         )
     
     async def get_user_by_id(self, user_id: UUID) -> Optional[User]:

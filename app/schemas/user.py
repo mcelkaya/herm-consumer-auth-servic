@@ -21,6 +21,12 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    expires_in: int  # seconds until access token expires
+
+
+class RefreshTokenRequest(BaseModel):
+    """Schema for refresh token request"""
+    refresh_token: str
 
 
 class UserResponse(BaseModel):
@@ -70,3 +76,24 @@ class MessageResponse(BaseModel):
 class ErrorResponse(BaseModel):
     """Error response schema"""
     detail: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request"""
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Schema for forgot password response"""
+    message: str = "If an account exists with this email, a password reset link has been sent."
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password request"""
+    token: str = Field(..., min_length=1, description="Password reset token from email")
+    new_password: str = Field(..., min_length=8, max_length=100, description="New password")
+
+
+class ResetPasswordResponse(BaseModel):
+    """Schema for reset password response"""
+    message: str = "Password has been reset successfully."
