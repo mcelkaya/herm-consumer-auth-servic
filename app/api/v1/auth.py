@@ -2,9 +2,13 @@ from fastapi import APIRouter, Depends, status, Request, Response, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from app.db.session import get_db
-from app.schemas.user import UserSignup, UserLogin, TokenResponse, UserResponse, RefreshTokenRequest
+from app.schemas.user import (
+    UserSignup, UserLogin, TokenResponse, UserResponse,
+    RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse
+)
 from app.services.user_service import UserService
 from app.services.token_service import TokenService, create_access_token
+from app.services.forgot_password_service import ForgotPasswordService
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.core.config import settings
@@ -217,3 +221,32 @@ async def logout_all_devices(
     response.delete_cookie(key="refresh_token")
 
     return {"message": "Logged out from all devices"}
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse, status_code=status.HTTP_200_OK)
+async def forgot_password(
+    request_data: ForgotPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+) -> ForgotPasswordResponse:
+    """
+    Send password reset email if account exists.
+
+    SECURITY NOTE: Always returns 200 to prevent email enumeration.
+    Never reveals whether an email exists in the system.
+
+    - **email**: Email address to send reset link to
+    """
+    # Get client IP for audit trail
+    ip_address = request.client.host if request.client else None
+
+    # Process request (returns True/False but we ignore it for security)
+    service = ForgotPasswordService(db)
+    await service.process_forgot_password(
+        email=request_data.email,
+        ip_address=ip_address,
+        expiry_hours=24  # Token valid for 24 hours
+    )
+
+    # ALWAYS return success message (don't reveal if email exists)
+    return ForgotPasswordResponse()

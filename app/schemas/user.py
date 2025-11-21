@@ -76,3 +76,13 @@ class MessageResponse(BaseModel):
 class ErrorResponse(BaseModel):
     """Error response schema"""
     detail: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request"""
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Schema for forgot password response"""
+    message: str = "If an account exists with this email, a password reset link has been sent."

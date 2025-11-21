@@ -34,6 +34,13 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
-    
+
+    # Relationship with password reset tokens
+    password_reset_tokens = relationship(
+        "PasswordResetToken",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
     def __repr__(self):
         return f"<User {self.email}>"
