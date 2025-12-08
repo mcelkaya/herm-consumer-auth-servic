@@ -2,7 +2,7 @@ from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
-from app.api.v1 import auth, connected_apps, oauth
+from app.api.v1 import auth
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -35,8 +35,6 @@ async def health_check():
 
 # Include routers
 app.include_router(auth.router, prefix="/herm-auth/api/v1")
-app.include_router(connected_apps.router, prefix="/herm-auth/api/v1")
-app.include_router(oauth.router, prefix="/herm-auth/api/v1")
 
 
 # Exception handlers
@@ -54,6 +52,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=settings.PORT,
         reload=settings.DEBUG
     )

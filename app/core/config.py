@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -10,7 +12,8 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
-    
+    PORT: int = 8001
+
     # Database
     DATABASE_URL: str
     DATABASE_SCHEMA: str = "public"
@@ -27,21 +30,6 @@ class Settings(BaseSettings):
     # Password Reset
     FRONTEND_URL: str = "http://localhost:3000"
     PASSWORD_RESET_TOKEN_EXPIRE_HOURS: int = 24
-
-    # OAuth Google
-    GOOGLE_CLIENT_ID: str
-    GOOGLE_CLIENT_SECRET: str
-    GOOGLE_REDIRECT_URI: str
-    
-    # OAuth Microsoft
-    MICROSOFT_CLIENT_ID: str
-    MICROSOFT_CLIENT_SECRET: str
-    MICROSOFT_REDIRECT_URI: str
-    
-    # OAuth Yahoo
-    YAHOO_CLIENT_ID: str
-    YAHOO_CLIENT_SECRET: str
-    YAHOO_REDIRECT_URI: str
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -55,7 +43,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True
 
 

@@ -54,6 +54,10 @@
                 {
                     "name": "LOG_LEVEL",
                     "value": "INFO"
+                },
+                {
+                    "name": "PORT",
+                    "value": "8000"
                 }
             ],
             "environmentFiles": [],
@@ -67,42 +71,6 @@
                 {
                     "name": "SECRET_KEY",
                     "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_secret_key"
-                },
-                {
-                    "name": "GOOGLE_CLIENT_ID",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_google_client_id"
-                },
-                {
-                    "name": "GOOGLE_CLIENT_SECRET",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_google_client_secret"
-                },
-                {
-                    "name": "GOOGLE_REDIRECT_URI",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_google_redirect_uri"
-                },
-                {
-                    "name": "MICROSOFT_CLIENT_ID",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_microsoft_client_id"
-                },
-                {
-                    "name": "MICROSOFT_CLIENT_SECRET",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_microsoft_client_secret"
-                },
-                {
-                    "name": "MICROSOFT_REDIRECT_URI",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_microsoft_redirect_uri"
-                },
-                {
-                    "name": "YAHOO_CLIENT_ID",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_yahoo_client_id"
-                },
-                {
-                    "name": "YAHOO_CLIENT_SECRET",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_yahoo_client_secret"
-                },
-                {
-                    "name": "YAHOO_REDIRECT_URI",
-                    "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_yahoo_redirect_uri"
                 },
                 {
                     "name": "AWS_ACCESS_KEY_ID",

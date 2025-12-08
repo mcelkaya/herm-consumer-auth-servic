@@ -98,5 +98,5 @@ class TokenService:
 def create_access_token(user: User) -> str:
     """Create an access token for a user"""
     return security_service.create_access_token(
-        data={"sub": str(user.id), "email": user.email}
+        data={"sub": str(user.id), "email": user.email, "role": user.role}
     )

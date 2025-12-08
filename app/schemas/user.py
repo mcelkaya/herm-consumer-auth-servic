@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 from uuid import UUID
 
@@ -41,31 +41,6 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
-class ConnectedAppCreate(BaseModel):
-    """Schema for creating connected app"""
-    provider: str = Field(..., pattern="^(gmail|outlook|yahoo)$")
-    provider_email: EmailStr
-    access_token: str
-    refresh_token: Optional[str] = None
-    token_expires_at: Optional[datetime] = None
-
-
-class ConnectedAppResponse(BaseModel):
-    """Schema for connected app response"""
-    id: UUID
-    provider: str
-    provider_email: str
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
-
-
-class ConnectedAppsList(BaseModel):
-    """Schema for list of connected apps"""
-    apps: List[ConnectedAppResponse]
-    total: int
 
 
 class MessageResponse(BaseModel):
