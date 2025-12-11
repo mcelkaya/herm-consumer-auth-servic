@@ -99,7 +99,7 @@ rate_limiter = RateLimiter()
 
 
 # Dependency factories for common rate limits
-def rate_limit_forgot_password(request: Request):
+async def rate_limit_forgot_password(request: Request):
     """
     Rate limit for forgot password endpoint
 
@@ -111,7 +111,7 @@ def rate_limit_forgot_password(request: Request):
     )
 
 
-def rate_limit_reset_password(request: Request):
+async def rate_limit_reset_password(request: Request):
     """
     Rate limit for reset password endpoint
 
@@ -123,7 +123,7 @@ def rate_limit_reset_password(request: Request):
     )
 
 
-def rate_limit_login(request: Request):
+async def rate_limit_login(request: Request):
     """
     Rate limit for login endpoint
 

@@ -1,11 +1,12 @@
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.user_repository import UserRepository
 from app.core.security import security_service
 from app.schemas.user import UserSignup, UserLogin, TokenResponse, UserResponse
 from app.models.user import User
+from app.services.sqs_producer import notification_producer
 from app.services.token_service import TokenService, create_access_token
 from app.core.config import settings
 
@@ -47,6 +48,17 @@ class UserService:
             device_info=device_info,
             ip_address=ip_address
         )
+
+        message_id = notification_producer.send_welcome(
+            email=signup_data.email,
+            user_name="hello world",
+            login_url="https://github.com/erimerturk/herm-notification-service/settings/access",
+            user_id=user.id,
+            language="en",  # Turkish language_code
+            correlation_id=str(uuid4())
+        )
+
+        # logger.info(f"Queued password reset notification: {message_id}")
 
         return TokenResponse(
             access_token=access_token,

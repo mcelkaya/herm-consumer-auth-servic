@@ -1,5 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from enum import Enum
+
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from typing import Optional, Any
 from datetime import datetime
 from uuid import UUID
 
@@ -72,3 +74,49 @@ class ResetPasswordRequest(BaseModel):
 class ResetPasswordResponse(BaseModel):
     """Schema for reset password response"""
     message: str = "Password has been reset successfully."
+
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        str_strip_whitespace=True,
+    )
+
+
+class Channel(str, Enum):
+    """Notification channels."""
+
+    EMAIL = "email"
+    SMS = "sms"  # Future
+    PUSH = "push"  # Future
+
+
+class Priority(str, Enum):
+    """Notification priority levels."""
+
+    HIGH = "high"
+    STANDARD = "standard"
+    LOW = "low"
+
+
+class RecipientSchema(BaseSchema):
+    """Recipient schema for SQS messages."""
+
+    email: EmailStr
+    user_id: Optional[str] = None
+    name: Optional[str] = None
+
+
+class NotificationMessage(BaseSchema):
+    """SQS notification message schema."""
+
+    channel: Channel = Field(default=Channel.EMAIL)
+    template_slug: str = Field(..., min_length=1, max_length=100)
+    recipient: RecipientSchema
+    language: str = Field(default="en", min_length=2, max_length=5)
+    variables: dict[str, Any] = Field(default_factory=dict)
+    priority: Priority = Field(default=Priority.STANDARD)
+    metadata: dict[str, Any] = Field(default_factory=dict)

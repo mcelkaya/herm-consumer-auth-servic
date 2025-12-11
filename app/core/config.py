@@ -1,5 +1,6 @@
 import os
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -36,12 +37,12 @@ class Settings(BaseSettings):
     
     # AWS
     AWS_REGION: str = "us-east-1"
-    AWS_ACCESS_KEY_ID: Optional[str] = None
-    AWS_SECRET_ACCESS_KEY: Optional[str] = None
-    
+    AWS_ENDPOINT_URL: Optional[str] = Field(default=None, description="AWS endpoint URL (for localstack)")
     # Logging
     LOG_LEVEL: str = "INFO"
-    
+
+    NOTIFICATION_QUEUE_URL: str = "INFO"
+
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True

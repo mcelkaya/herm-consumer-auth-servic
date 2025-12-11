@@ -1,5 +1,5 @@
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
@@ -7,6 +7,8 @@ from app.models.user import User
 from app.models.password_reset_token import PasswordResetToken
 from app.core.config import settings
 import logging
+
+from app.services.sqs_producer import notification_producer
 
 logger = logging.getLogger(__name__)
 
@@ -38,56 +40,6 @@ class ForgotPasswordService:
         # return language if language else 'en'
 
         return 'en'  # Default to English for now
-
-    async def get_email_template(self, email_type_name: str, language_code: str):
-        """
-        Get template by email_type name and language, fallback to English
-
-        NOTE: This is a placeholder. When email_types and email_templates tables exist:
-        - Query email_types by name (e.g., 'forget_password')
-        - Query email_templates by email_type_id and language_code
-        - Fallback to English if user's language not found
-        - Return template with id, subject, and content
-        """
-        # TODO: Implement when email_types and email_templates tables are created
-        # Example query:
-        # email_type = await self.db.execute(
-        #     select(EmailType).where(EmailType.name == email_type_name)
-        # )
-        # email_type = email_type.scalar_one_or_none()
-        #
-        # if not email_type:
-        #     return None
-        #
-        # template = await self.db.execute(
-        #     select(EmailTemplate)
-        #     .where(and_(
-        #         EmailTemplate.email_type_id == email_type.id,
-        #         EmailTemplate.language_code == language_code
-        #     ))
-        # )
-        # template = template.scalar_one_or_none()
-        #
-        # if not template:
-        #     # Fallback to English
-        #     template = await self.db.execute(
-        #         select(EmailTemplate)
-        #         .where(and_(
-        #             EmailTemplate.email_type_id == email_type.id,
-        #             EmailTemplate.language_code == 'en'
-        #         ))
-        #     )
-        #     template = template.scalar_one_or_none()
-        #
-        # return template
-
-        # Return a mock template for now
-        class MockTemplate:
-            id = 1
-            subject = "Password Reset Request"
-            content = "Click the link to reset your password: {reset_link}"
-
-        return MockTemplate()
 
     async def create_reset_token(
         self,
@@ -124,45 +76,6 @@ class ForgotPasswordService:
 
         return token
 
-    async def create_pending_email(
-        self,
-        template_id: int,
-        recipient_email: str,
-        language_code: str,
-        template_variables: dict
-    ):
-        """
-        Queue email for background worker
-
-        NOTE: This is a placeholder. When pending_emails table exists:
-        - Create a record in pending_emails table
-        - Include template_id, recipient_email, language_code
-        - Store template_variables as JSONB
-        - Set status to 'pending'
-        - Background worker will pick it up and send
-        """
-        # TODO: Implement when pending_emails table is created
-        # Example:
-        # pending_email = PendingEmail(
-        #     email_templates_id=template_id,
-        #     recipient_email=recipient_email,
-        #     language_code=language_code,
-        #     template_variables=template_variables,
-        #     status='pending'
-        # )
-        # self.db.add(pending_email)
-        # await self.db.commit()
-        # return pending_email
-
-        # For now, just log that we would send an email
-        logger.info(
-            f"[SIMULATED EMAIL] Would send password reset email to: {recipient_email}\n"
-            f"Language: {language_code}\n"
-            f"Template ID: {template_id}\n"
-            f"Variables: {template_variables}"
-        )
-
-        return True
 
     async def process_forgot_password(
         self,
@@ -189,13 +102,6 @@ class ForgotPasswordService:
         # Get user's language
         language_code = await self.get_user_language_code(user.id)
 
-        # Get email template
-        template = await self.get_email_template('forget_password', language_code)
-
-        if not template:
-            logger.error(f"Email template 'forget_password' not found for language: {language_code}")
-            return False
-
         # Create reset token
         reset_token = await self.create_reset_token(user.id, ip_address, expiry_hours)
 
@@ -206,19 +112,19 @@ class ForgotPasswordService:
         # Note: user.first_name and user.last_name don't exist in current User model
         # Using email as fallback
         user_name = email.split('@')[0]  # Simple fallback
-        template_variables = {
-            "reset_link": reset_link,
-            "user_name": user_name,
-            "expiry_hours": expiry_hours
-        }
 
-        # Queue email
-        await self.create_pending_email(
-            template_id=template.id,
-            recipient_email=email,
-            language_code=language_code,
-            template_variables=template_variables
+        message_id = notification_producer.send_password_reset(
+            email=email,
+            user_name=user_name,
+            reset_link=reset_link,
+            expiry_hours=expiry_hours,
+            user_id=user.id,
+            language="en",  # Turkish language_code
+            correlation_id=str(uuid4())
         )
+
+        logger.info(f"Queued password reset notification: {message_id}")
+
 
         logger.info(f"Password reset token created for user: {email} (expires in {expiry_hours} hours)")
 
