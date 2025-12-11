@@ -73,14 +73,6 @@
           "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_secret_key"
         },
         {
-          "name": "AWS_ACCESS_KEY_ID",
-          "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_aws_access_key_id"
-        },
-        {
-          "name": "AWS_SECRET_ACCESS_KEY",
-          "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_aws_secret_access_key"
-        },
-        {
           "name": "NOTIFICATION_QUEUE_URL",
           "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod-notification-queue_url"
         }
