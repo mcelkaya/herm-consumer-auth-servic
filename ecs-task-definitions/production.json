@@ -58,6 +58,10 @@
         {
           "name": "PORT",
           "value": "8000"
+        },
+        {
+          "name": "FRONTEND_URL",
+          "value": "https://beta-app.herm.io"
         }
       ],
       "environmentFiles": [],
