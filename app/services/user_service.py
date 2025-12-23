@@ -1,6 +1,6 @@
 from typing import Optional
 from uuid import UUID, uuid4
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.user_repository import UserRepository
 from app.core.security import security_service
@@ -8,7 +8,11 @@ from app.schemas.user import UserSignup, UserLogin, TokenResponse, UserResponse
 from app.models.user import User
 from app.services.sqs_producer import notification_producer
 from app.services.token_service import TokenService, create_access_token
+from app.services.email_verification_service import EmailVerificationService
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class UserService:
@@ -18,12 +22,14 @@ class UserService:
         self.db = db
         self.user_repo = UserRepository(db)
         self.token_service = TokenService(db)
+        self.verification_service = EmailVerificationService(db)
     
     async def signup(
         self,
         signup_data: UserSignup,
         device_info: Optional[str] = None,
-        ip_address: Optional[str] = None
+        ip_address: Optional[str] = None,
+        background_tasks: Optional[BackgroundTasks] = None
     ) -> TokenResponse:
         """Register a new user"""
         # Check if user already exists
@@ -41,7 +47,30 @@ class UserService:
             hashed_password=hashed_password
         )
 
-        # Generate tokens
+        # Get language from signup data (default to 'en' if not provided)
+        language = signup_data.language or "en"
+
+        # Send verification email asynchronously
+        if background_tasks:
+            background_tasks.add_task(
+                self.verification_service.send_verification_email,
+                user=user,
+                language=language,  # Pass language to email service
+                ip_address=ip_address
+            )
+            logger.info(f"Verification email queued for user: {user.email} (language: {language})")
+        else:
+            # Fallback to synchronous if background_tasks not available
+            try:
+                await self.verification_service.send_verification_email(
+                    user=user,
+                    language=language,  # Pass language to email service
+                    ip_address=ip_address
+                )
+            except Exception as e:
+                logger.error(f"Failed to send verification email for user {user.email}: {str(e)}")
+
+        # Generate tokens (is_verified will be false initially)
         access_token = create_access_token(user)
         refresh_token = await self.token_service.create_refresh_token(
             user=user,
@@ -49,16 +78,17 @@ class UserService:
             ip_address=ip_address
         )
 
+        # Send welcome notification via SQS
         message_id = notification_producer.send_welcome(
             email=signup_data.email,
             user_name="hello world",
             login_url="https://github.com/erimerturk/herm-notification-service/settings/access",
             user_id=user.id,
-            language="en",  # Turkish language_code
+            language=language,  # Use detected language
             correlation_id=str(uuid4())
         )
 
-        # logger.info(f"Queued password reset notification: {message_id}")
+        logger.info(f"Queued welcome notification: {message_id}")
 
         return TokenResponse(
             access_token=access_token,
@@ -95,7 +125,7 @@ class UserService:
                 detail="User account is inactive"
             )
 
-        # Generate tokens
+        # Generate tokens (is_verified is included in JWT)
         access_token = create_access_token(user)
         refresh_token = await self.token_service.create_refresh_token(
             user=user,

@@ -1,20 +1,26 @@
-from fastapi import APIRouter, Depends, status, Request, Response, Cookie
+from fastapi import APIRouter, Depends, status, Request, Response, Cookie, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from app.db.session import get_db
 from app.schemas.user import (
     UserSignup, UserLogin, TokenResponse, UserResponse,
     RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse,
-    ResetPasswordRequest, ResetPasswordResponse
+    ResetPasswordRequest, ResetPasswordResponse,
+    VerifyEmailResponse, ResendVerificationRequest, ResendVerificationResponse
 )
 from app.services.user_service import UserService
 from app.services.token_service import TokenService, create_access_token
 from app.services.forgot_password_service import ForgotPasswordService
 from app.services.reset_password_service import ResetPasswordService
+from app.services.email_verification_service import EmailVerificationService
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.core.config import settings
-from app.middleware.rate_limit import rate_limit_forgot_password, rate_limit_reset_password
+from app.middleware.rate_limit import (
+    rate_limit_forgot_password,
+    rate_limit_reset_password,
+    rate_limit_resend_verification
+)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -24,6 +30,7 @@ async def signup(
     signup_data: UserSignup,
     request: Request,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
     """
@@ -31,6 +38,9 @@ async def signup(
 
     - **email**: Valid email address
     - **password**: Password (minimum 8 characters)
+    - **language**: Language code (e.g., 'en', 'tr') - optional, defaults to 'en'
+    
+    Note: A verification email will be sent to the provided email address.
     """
     # Get device info and IP
     device_info = request.headers.get("User-Agent")
@@ -40,7 +50,8 @@ async def signup(
     token_response = await user_service.signup(
         signup_data,
         device_info=device_info,
-        ip_address=ip_address
+        ip_address=ip_address,
+        background_tasks=background_tasks
     )
 
     # Set refresh token as HttpOnly cookie (RECOMMENDED for security)
@@ -242,14 +253,21 @@ async def forgot_password(
     Rate Limit: 3 requests per 15 minutes per IP address
 
     - **email**: Email address to send reset link to
+    - **language**: Language code (e.g., 'en', 'tr') - optional, defaults to 'en'
+
+    Returns translation key: auth.forgotPassword.emailSent
     """
     # Get client IP for audit trail
     ip_address = request.client.host if request.client else None
+
+    # Get language from request (default to 'en')
+    language = request_data.language or "en"
 
     # Process request (returns True/False but we ignore it for security)
     service = ForgotPasswordService(db)
     await service.process_forgot_password(
         email=request_data.email,
+        language=language,
         ip_address=ip_address,
         expiry_hours=24  # Token valid for 24 hours
     )
@@ -273,6 +291,8 @@ async def reset_password(
     - **token**: Password reset token from email
     - **new_password**: New password (minimum 8 characters)
 
+    Returns translation key: auth.resetPassword.success
+
     Raises:
         400: Invalid or expired token
         404: User not found
@@ -291,3 +311,80 @@ async def reset_password(
     )
 
     return ResetPasswordResponse()
+
+
+@router.get("/verify-email", response_model=VerifyEmailResponse, status_code=status.HTTP_200_OK)
+async def verify_email(
+    token: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+) -> VerifyEmailResponse:
+    """
+    Verify user's email address using token from email
+
+    - **token**: Email verification token from email (query parameter)
+
+    Returns translation key: auth.verifyEmail.success
+
+    Raises:
+        400: Invalid or expired token
+        404: User not found
+    """
+    # Get client IP for audit trail
+    ip_address = request.client.host if request.client else None
+
+    # Verify email
+    service = EmailVerificationService(db)
+    await service.verify_email(
+        token=token,
+        ip_address=ip_address
+    )
+
+    return VerifyEmailResponse()
+
+
+@router.post("/resend-verification", response_model=ResendVerificationResponse, status_code=status.HTTP_200_OK)
+async def resend_verification(
+    request_data: ResendVerificationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_resend_verification)
+) -> ResendVerificationResponse:
+    """
+    Resend email verification link
+
+    SECURITY NOTE: Always returns 200 to prevent email enumeration.
+    Never reveals whether an email exists in the system.
+
+    Rate Limit: 3 requests per 15 minutes per IP address
+
+    - **email**: Email address to send verification link to
+    - **language**: Language code (e.g., 'en', 'tr') - optional, defaults to 'en'
+
+    Returns translation key: auth.verifyEmail.emailSent
+    """
+    from sqlalchemy import select
+    
+    # Get client IP for audit trail
+    ip_address = request.client.host if request.client else None
+
+    # Get language from request (default to 'en')
+    language = request_data.language or "en"
+
+    # Check if user exists
+    result = await db.execute(
+        select(User).where(User.email == request_data.email)
+    )
+    user = result.scalar_one_or_none()
+
+    if user and not user.is_verified:
+        # Send verification email
+        service = EmailVerificationService(db)
+        await service.send_verification_email(
+            user=user,
+            language=language,
+            ip_address=ip_address
+        )
+
+    # ALWAYS return success message (don't reveal if email exists)
+    return ResendVerificationResponse()

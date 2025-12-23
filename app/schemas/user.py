@@ -1,5 +1,4 @@
 from enum import Enum
-
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional, Any
 from datetime import datetime
@@ -10,6 +9,7 @@ class UserSignup(BaseModel):
     """Schema for user signup"""
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=100)
+    language: Optional[str] = Field(default="en", description="User's preferred language code (e.g., 'en', 'tr')")
 
 
 class UserLogin(BaseModel):
@@ -43,25 +43,28 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
-
-
 class MessageResponse(BaseModel):
-    """Generic message response"""
-    message: str
+    """Generic message response with translation key"""
+    message_key: str
+    message: Optional[str] = None  # Optional fallback for backward compatibility
 
 
 class ErrorResponse(BaseModel):
-    """Error response schema"""
-    detail: str
+    """Error response schema with translation key"""
+    error_key: str
+    detail: Optional[str] = None  # Optional fallback for backward compatibility
 
 
+# Password Reset Schemas
 class ForgotPasswordRequest(BaseModel):
     """Schema for forgot password request"""
     email: EmailStr
+    language: Optional[str] = Field(default="en", description="User's preferred language code")
 
 
 class ForgotPasswordResponse(BaseModel):
     """Schema for forgot password response"""
+    message_key: str = "auth.forgotPassword.emailSent"
     message: str = "If an account exists with this email, a password reset link has been sent."
 
 
@@ -73,9 +76,35 @@ class ResetPasswordRequest(BaseModel):
 
 class ResetPasswordResponse(BaseModel):
     """Schema for reset password response"""
+    message_key: str = "auth.resetPassword.success"
     message: str = "Password has been reset successfully."
 
 
+# Email Verification Schemas
+class VerifyEmailRequest(BaseModel):
+    """Schema for email verification request"""
+    token: str = Field(..., min_length=1, description="Email verification token from email")
+
+
+class VerifyEmailResponse(BaseModel):
+    """Schema for email verification response"""
+    message_key: str = "auth.verifyEmail.success"
+    message: str = "Email has been verified successfully."
+
+
+class ResendVerificationRequest(BaseModel):
+    """Schema for resend verification request"""
+    email: EmailStr
+    language: Optional[str] = Field(default="en", description="User's preferred language code")
+
+
+class ResendVerificationResponse(BaseModel):
+    """Schema for resend verification response"""
+    message_key: str = "auth.verifyEmail.emailSent"
+    message: str = "If an account exists with this email, a verification link has been sent."
+
+
+# SQS Notification Schemas
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
 
