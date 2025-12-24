@@ -6,7 +6,7 @@ from app.schemas.user import (
     UserSignup, UserLogin, TokenResponse, UserResponse,
     RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse,
     ResetPasswordRequest, ResetPasswordResponse,
-    VerifyEmailResponse, ResendVerificationRequest, ResendVerificationResponse
+    VerifyEmailResponse, ResendVerificationResponse
 )
 from app.services.user_service import UserService
 from app.services.token_service import TokenService, create_access_token
@@ -345,46 +345,49 @@ async def verify_email(
 
 @router.post("/resend-verification", response_model=ResendVerificationResponse, status_code=status.HTTP_200_OK)
 async def resend_verification(
-    request_data: ResendVerificationRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # ← REQUIRES AUTHENTICATION
     _: None = Depends(rate_limit_resend_verification)
 ) -> ResendVerificationResponse:
     """
-    Resend email verification link
+    Resend email verification link to authenticated user
 
-    SECURITY NOTE: Always returns 200 to prevent email enumeration.
-    Never reveals whether an email exists in the system.
-
+    **REQUIRES AUTHENTICATION**: Must include Bearer token in Authorization header
+    
     Rate Limit: 3 requests per 15 minutes per IP address
 
-    - **email**: Email address to send verification link to
-    - **language**: Language code (e.g., 'en', 'tr') - optional, defaults to 'en'
+    Security:
+    - Only authenticated users can request verification
+    - Can only resend for your own email (extracted from token)
+    - Prevents abuse/spam to random email addresses
 
     Returns translation key: auth.verifyEmail.emailSent
     """
-    from sqlalchemy import select
+    from fastapi import HTTPException
     
     # Get client IP for audit trail
     ip_address = request.client.host if request.client else None
 
-    # Get language from request (default to 'en')
-    language = request_data.language or "en"
-
-    # Check if user exists
-    result = await db.execute(
-        select(User).where(User.email == request_data.email)
-    )
-    user = result.scalar_one_or_none()
-
-    if user and not user.is_verified:
-        # Send verification email
-        service = EmailVerificationService(db)
-        await service.send_verification_email(
-            user=user,
-            language=language,
-            ip_address=ip_address
+    # Check if already verified
+    if current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is already verified"
         )
 
-    # ALWAYS return success message (don't reveal if email exists)
+    # Get language from Accept-Language header or default to 'en'
+    # Frontend can send: headers: { 'Accept-Language': 'tr' }
+    accept_language = request.headers.get("Accept-Language", "en")
+    language = accept_language.split(',')[0].split('-')[0]  # Extract primary language
+
+    # Send verification email for the authenticated user
+    service = EmailVerificationService(db)
+    await service.send_verification_email(
+        user=current_user,  # Uses authenticated user's email
+        language=language,
+        ip_address=ip_address
+    )
+
+    # Return success message
     return ResendVerificationResponse()
