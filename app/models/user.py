@@ -36,5 +36,12 @@ class User(Base):
         cascade="all, delete-orphan"
     )
 
+    # Relationship with email verification tokens
+    email_verification_tokens = relationship(
+        "EmailVerificationToken",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
     def __repr__(self):
         return f"<User {self.email}>"
