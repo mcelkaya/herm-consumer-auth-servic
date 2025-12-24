@@ -133,3 +133,15 @@ async def rate_limit_login(request: Request):
     return asyncio.create_task(
         rate_limiter.check_rate_limit(request, max_requests=5, window_seconds=300)
     )
+
+
+async def rate_limit_resend_verification(request: Request):
+    """
+    Rate limit for resend verification endpoint
+
+    Limit: 3 requests per 15 minutes (900 seconds)
+    """
+    import asyncio
+    return asyncio.create_task(
+        rate_limiter.check_rate_limit(request, max_requests=3, window_seconds=900)
+    )
