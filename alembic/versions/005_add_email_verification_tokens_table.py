@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '005_email_verification'
-down_revision = '004'  # ← CHANGE THIS to your last migration ID (e.g., '004', '003_add_xyz', etc.)
+down_revision = '004'
 branch_labels = None
 depends_on = None
 
