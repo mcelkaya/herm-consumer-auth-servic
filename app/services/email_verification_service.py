@@ -107,6 +107,10 @@ class EmailVerificationService:
 
         Returns:
             EmailVerificationToken if valid, None otherwise
+            
+        Note: Returns token even if already used to support idempotent verification
+        (e.g., duplicate calls from frontend). The verify_email method will check
+        if user is already verified and handle accordingly.
         """
         result = await self.db.execute(
             select(EmailVerificationToken).where(EmailVerificationToken.token == token)
@@ -117,12 +121,21 @@ class EmailVerificationService:
             logger.warning("Email verification attempted with non-existent token")
             return None
 
-        if not verification_token.is_valid():
+        # Check if expired (but allow used tokens for idempotency)
+        if verification_token.is_expired():
             logger.warning(
-                f"Email verification attempted with invalid token for user {verification_token.user_id} "
-                f"(expired: {verification_token.is_expired()}, used: {verification_token.is_used})"
+                f"Email verification attempted with expired token for user {verification_token.user_id}"
             )
             return None
+
+        # ✅ CHANGED: Don't reject used tokens here
+        # The verify_email method will check if user is already verified
+        # This allows idempotent verification (duplicate calls return same result)
+        if verification_token.is_used:
+            logger.info(
+                f"Email verification attempted with already-used token for user {verification_token.user_id} "
+                f"(allowing for idempotency check)"
+            )
 
         return verification_token
 
@@ -133,6 +146,8 @@ class EmailVerificationService:
     ) -> User:
         """
         Verify user's email using token
+        
+        Idempotent: Returns success even if user already verified (for duplicate calls)
 
         Args:
             token: Email verification token
@@ -142,9 +157,9 @@ class EmailVerificationService:
             User object with updated is_verified status
 
         Raises:
-            HTTPException: If token is invalid or expired
+            HTTPException: If token is invalid, expired, or user not found
         """
-        # Verify token
+        # Verify token (allows already-used tokens for idempotency)
         verification_token = await self.verify_token(token)
 
         if not verification_token:
@@ -166,17 +181,35 @@ class EmailVerificationService:
                 detail="User not found"
             )
 
-        # Check if already verified
+        # ✅ IDEMPOTENT: If already verified, just return success
+        # This handles duplicate calls from frontend (e.g., React StrictMode)
         if user.is_verified:
-            logger.info(f"User already verified: {user.email}")
-            # Mark token as used anyway
-            verification_token.is_used = True
-            verification_token.used_at = datetime.utcnow()
-            await self.db.commit()
-            # Return user with is_verified=True
+            logger.info(
+                f"Email verification: User already verified: {user.email} "
+                f"(token already used: {verification_token.is_used}) - returning success for idempotency"
+            )
+            # Mark token as used if not already (shouldn't happen but safety check)
+            if not verification_token.is_used:
+                verification_token.is_used = True
+                verification_token.used_at = datetime.utcnow()
+                await self.db.commit()
+            
+            # Return user so endpoint can generate fresh JWT token
             return user
 
-        # Update user verification status
+        # ✅ SECURITY CHECK: If token is already used but user NOT verified, reject
+        # This catches suspicious activity (token reuse after partial failure)
+        if verification_token.is_used:
+            logger.warning(
+                f"Email verification: Token already used but user NOT verified: {user.email} "
+                f"(suspicious activity detected) - rejecting"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token"
+            )
+
+        # ✅ FIRST-TIME VERIFICATION: Update user status
         user.is_verified = True
         self.db.add(user)
 
