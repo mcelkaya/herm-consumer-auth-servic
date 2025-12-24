@@ -130,7 +130,7 @@ class EmailVerificationService:
         self,
         token: str,
         ip_address: Optional[str] = None
-    ) -> bool:
+    ) -> User:
         """
         Verify user's email using token
 
@@ -139,7 +139,7 @@ class EmailVerificationService:
             ip_address: IP address of requester for audit
 
         Returns:
-            True if email verified successfully
+            User object with updated is_verified status
 
         Raises:
             HTTPException: If token is invalid or expired
@@ -173,7 +173,8 @@ class EmailVerificationService:
             verification_token.is_used = True
             verification_token.used_at = datetime.utcnow()
             await self.db.commit()
-            return True
+            # Return user with is_verified=True
+            return user
 
         # Update user verification status
         user.is_verified = True
@@ -186,13 +187,16 @@ class EmailVerificationService:
 
         # Commit changes
         await self.db.commit()
+        
+        # Refresh user to get updated data
+        await self.db.refresh(user)
 
         logger.info(
             f"Email successfully verified for user: {user.email} "
             f"(from IP: {ip_address or 'unknown'})"
         )
 
-        return True
+        return user
 
     async def cleanup_expired_tokens(self) -> int:
         """

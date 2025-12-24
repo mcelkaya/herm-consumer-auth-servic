@@ -87,9 +87,11 @@ class VerifyEmailRequest(BaseModel):
 
 
 class VerifyEmailResponse(BaseModel):
-    """Schema for email verification response"""
+    """Schema for email verification response with new access token"""
     message_key: str = "auth.verifyEmail.success"
     message: str = "Email has been verified successfully."
+    access_token: str  # New JWT token with is_verified=true
+    expires_in: int  # Token expiration in seconds
 
 
 class ResendVerificationRequest(BaseModel):

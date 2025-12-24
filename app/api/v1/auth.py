@@ -321,10 +321,16 @@ async def verify_email(
 ) -> VerifyEmailResponse:
     """
     Verify user's email address using token from email
+    
+    Returns a new access token with updated is_verified status
 
     - **token**: Email verification token from email (query parameter)
 
-    Returns translation key: auth.verifyEmail.success
+    Returns:
+        - message_key: Translation key for success message
+        - message: Success message
+        - access_token: New JWT token with is_verified=true
+        - expires_in: Token expiration time in seconds
 
     Raises:
         400: Invalid or expired token
@@ -333,14 +339,20 @@ async def verify_email(
     # Get client IP for audit trail
     ip_address = request.client.host if request.client else None
 
-    # Verify email
+    # Verify email and get user
     service = EmailVerificationService(db)
-    await service.verify_email(
+    user = await service.verify_email(
         token=token,
         ip_address=ip_address
     )
 
-    return VerifyEmailResponse()
+    # Generate new access token with updated is_verified status
+    access_token = create_access_token(user)
+
+    return VerifyEmailResponse(
+        access_token=access_token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
 
 
 @router.post("/resend-verification", response_model=ResendVerificationResponse, status_code=status.HTTP_200_OK)
