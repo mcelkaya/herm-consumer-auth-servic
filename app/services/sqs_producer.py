@@ -20,13 +20,28 @@ class NotificationProducer:
     """SQS producer for sending notifications"""
 
     def __init__(self):
-        self.sqs_client = boto3.client(
-            'sqs',
-            region_name=settings.AWS_REGION,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-        )
+        """
+        Initialize SQS client
+        
+        In ECS, uses IAM task role credentials automatically.
+        In local development, can use AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY if set.
+        """
+        # Build boto3 client config
+        client_config = {
+            'region_name': settings.AWS_REGION,
+        }
+        
+        # Only add explicit credentials if they're set (for local development)
+        # In ECS, leave these out to use IAM task role
+        if hasattr(settings, 'AWS_ACCESS_KEY_ID') and settings.AWS_ACCESS_KEY_ID:
+            client_config['aws_access_key_id'] = settings.AWS_ACCESS_KEY_ID
+        if hasattr(settings, 'AWS_SECRET_ACCESS_KEY') and settings.AWS_SECRET_ACCESS_KEY:
+            client_config['aws_secret_access_key'] = settings.AWS_SECRET_ACCESS_KEY
+        
+        self.sqs_client = boto3.client('sqs', **client_config)
         self.queue_url = settings.NOTIFICATION_QUEUE_URL
+        
+        logger.info(f"SQS Producer initialized for queue: {self.queue_url}")
 
     def _send_message(self, message: NotificationMessage) -> str:
         """
