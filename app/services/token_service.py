@@ -96,7 +96,16 @@ class TokenService:
 
 
 def create_access_token(user: User) -> str:
-    """Create an access token for a user"""
+    """
+    Create an access token for a user
+    
+    CRITICAL: Includes is_verified status for Consumer Service middleware sync
+    """
     return security_service.create_access_token(
-        data={"sub": str(user.id), "email": user.email, "role": user.role}
+        data={
+            "sub": str(user.id), 
+            "email": user.email,
+            "is_verified": user.is_verified,  # ✅ ADD THIS LINE!
+            "role": user.role
+        }
     )
