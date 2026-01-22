@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+
+    CORS_ORIGINS: Optional[str] = Field(
+    default="https://beta-app.herm.io,https://app.herm.io,http://localhost:3000",
+    description="Comma-separated list of allowed CORS origins"
+)
     
     # AWS
     AWS_REGION: str = "us-east-1"
