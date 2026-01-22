@@ -1,6 +1,6 @@
 import os
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from typing import Optional, List
 
@@ -32,21 +32,19 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     PASSWORD_RESET_TOKEN_EXPIRE_HOURS: int = 24
     
-    # CORS - comma-separated list of allowed origins
+    # CORS - comma-separated list of allowed origins (stored as string)
     # IMPORTANT: Cannot use "*" when credentials are enabled
-    CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000"],
-        description="List of allowed CORS origins"
+    # Example: "https://beta-app.herm.io,https://app.herm.io"
+    CORS_ORIGINS_STR: str = Field(
+        default="http://localhost:3000",
+        alias="CORS_ORIGINS",
+        description="Comma-separated list of allowed CORS origins"
     )
     
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v):
-        """Parse CORS_ORIGINS from comma-separated string or list"""
-        if isinstance(v, str):
-            # Handle comma-separated string from environment variable
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    @property
+    def CORS_ORIGINS(self) -> List[str]:
+        """Parse CORS_ORIGINS from comma-separated string to list"""
+        return [origin.strip() for origin in self.CORS_ORIGINS_STR.split(",") if origin.strip()]
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -63,6 +61,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True
+        populate_by_name = True  # Allow using alias for env var
 
 
 settings = Settings()
