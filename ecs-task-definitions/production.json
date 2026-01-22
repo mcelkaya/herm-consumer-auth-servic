@@ -62,6 +62,10 @@
         {
           "name": "FRONTEND_URL",
           "value": "https://beta-app.herm.io"
+        },
+        {
+          "name": "CORS_ORIGINS",
+          "value": "https://beta-app.herm.io,https://app.herm.io"
         }
       ],
       "environmentFiles": [],

@@ -1,15 +1,15 @@
 import os
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
     """Application settings"""
     
     # Application
-    APP_NAME: str = "Email Integration Service"
+    APP_NAME: str = "Herm Auth Service"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
@@ -32,17 +32,29 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     PASSWORD_RESET_TOKEN_EXPIRE_HOURS: int = 24
     
+    # CORS - comma-separated list of allowed origins
+    # IMPORTANT: Cannot use "*" when credentials are enabled
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:3000"],
+        description="List of allowed CORS origins"
+    )
+    
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse CORS_ORIGINS from comma-separated string or list"""
+        if isinstance(v, str):
+            # Handle comma-separated string from environment variable
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+    
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
-
-    CORS_ORIGINS: Optional[str] = Field(
-    default="https://beta-app.herm.io,https://app.herm.io,http://localhost:3000",
-    description="Comma-separated list of allowed CORS origins"
-)
     
     # AWS
     AWS_REGION: str = "us-east-1"
     AWS_ENDPOINT_URL: Optional[str] = Field(default=None, description="AWS endpoint URL (for localstack)")
+    
     # Logging
     LOG_LEVEL: str = "INFO"
 

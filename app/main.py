@@ -13,15 +13,8 @@ app = FastAPI(
 )
 
 # CORS middleware - specific origins required when using credentials
-cors_origins = [
-    "https://beta-app.herm.io",
-    "https://app.herm.io",
-    "http://localhost:3000",  # For local development
-]
-
-# Allow override from environment variable
-if settings.CORS_ORIGINS:
-    cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+# Cannot use ["*"] with allow_credentials=True (browser security restriction)
+cors_origins = settings.CORS_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
