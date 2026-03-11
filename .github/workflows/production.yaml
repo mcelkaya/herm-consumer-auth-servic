@@ -23,7 +23,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4  # Use v4
         with:
           aws-region: eu-central-1
-          role-to-assume: arn:aws:iam::251821306304:role/GithubActionsRole
+          role-to-assume: arn:aws:iam::373352901774:role/GithubActionsRole
           role-session-name: GithubActionsRole
 
       - name: Checkout code
