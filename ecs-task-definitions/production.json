@@ -2,7 +2,7 @@
   "containerDefinitions": [
     {
       "name": "prod-auth",
-      "image": "251821306304.dkr.ecr.eu-central-1.amazonaws.com/auth:__IMAGE_TAG__",
+      "image": "373352901774.dkr.ecr.eu-central-1.amazonaws.com/auth:__IMAGE_TAG__",
       "cpu": 0,
       "portMappings": [
         {
@@ -61,7 +61,7 @@
         },
         {
           "name": "FRONTEND_URL",
-          "value": "https://beta-app.herm.io"
+          "value": "https://app.herm.io"
         },
         {
           "name": "CORS_ORIGINS",
@@ -74,15 +74,15 @@
       "secrets": [
         {
           "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_auth_database_url"
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_auth_database_url"
         },
         {
           "name": "SECRET_KEY",
-          "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod_secret_key"
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_secret_key"
         },
         {
           "name": "NOTIFICATION_QUEUE_URL",
-          "valueFrom": "arn:aws:ssm:eu-central-1:251821306304:parameter/prod-notification-queue_url"
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-notification-queue_url"
         }
       ],
       "ulimits": [],
@@ -99,8 +99,8 @@
     }
   ],
   "family": "prod-auth",
-  "executionRoleArn": "arn:aws:iam::251821306304:role/ecsTaskExecutionRole",
-  "taskRoleArn": "arn:aws:iam::251821306304:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::373352901774:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::373352901774:role/ecsTaskExecutionRole",
   "networkMode": "awsvpc",
   "volumes": [],
   "placementConstraints": [],
