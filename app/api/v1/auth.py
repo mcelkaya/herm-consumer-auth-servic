@@ -60,7 +60,7 @@ async def signup(
         value=token_response.refresh_token,
         httponly=True,  # Cannot be accessed by JavaScript
         secure=True,    # Only sent over HTTPS
-        samesite="lax", # CSRF protection
+        samesite="none", # CSRF protection
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
     )
 
@@ -97,10 +97,13 @@ async def login(
         value=token_response.refresh_token,
         httponly=True,  # Cannot be accessed by JavaScript
         secure=True,    # Only sent over HTTPS
-        samesite="lax", # CSRF protection
+        samesite="none", # CSRF protection
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
     )
 
+    response.headers["Content-Type"] = "application/json"
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    
     return token_response
 
 
@@ -176,7 +179,7 @@ async def refresh_access_token(
             value=new_refresh_token.token,
             httponly=True,
             secure=True,
-            samesite="lax",
+            samesite="none",
             max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
         )
 
