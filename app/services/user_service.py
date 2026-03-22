@@ -78,18 +78,6 @@ class UserService:
             ip_address=ip_address
         )
 
-        # Send welcome notification via SQS
-        message_id = notification_producer.send_welcome(
-            email=signup_data.email,
-            user_name="hello world",
-            login_url="https://github.com/erimerturk/herm-notification-service/settings/access",
-            user_id=user.id,
-            language=language,  # Use detected language
-            correlation_id=str(uuid4())
-        )
-
-        logger.info(f"Queued welcome notification: {message_id}")
-
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token.token,
