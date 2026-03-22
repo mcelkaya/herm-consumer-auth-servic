@@ -8,10 +8,7 @@ from app.api.v1 import auth
 
 class HealthCheckFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        if "/herm-auth/health" in record.getMessage():
-            record.levelno = logging.DEBUG
-            record.levelname = "DEBUG"
-        return True
+        return "/herm-auth/health" not in record.getMessage()
 
 
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
