@@ -13,13 +13,17 @@ from app.services.token_service import TokenService, create_access_token
 from app.services.forgot_password_service import ForgotPasswordService
 from app.services.reset_password_service import ResetPasswordService
 from app.services.email_verification_service import EmailVerificationService
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_blocklist, get_current_user
 from app.models.user import User
 from app.core.config import settings
+from app.core.security import security_service
+from app.services.token_blocklist_service import TokenBlocklistService
 from app.middleware.rate_limit import (
     rate_limit_forgot_password,
     rate_limit_reset_password,
-    rate_limit_resend_verification
+    rate_limit_resend_verification,
+    rate_limit_login,
+    rate_limit_signup,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -31,7 +35,8 @@ async def signup(
     request: Request,
     response: Response,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_signup)
 ) -> TokenResponse:
     """
     Register a new user account
@@ -72,7 +77,8 @@ async def login(
     login_data: UserLogin,
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_login)
 ) -> TokenResponse:
     """
     Authenticate user and get access tokens
@@ -197,46 +203,76 @@ async def refresh_access_token(
         )
 
 
+def _blocklist_access_token(payload: dict | None, blocklist: TokenBlocklistService):
+    """Access token JTI'sını blocklist'e eklemek için coroutine döndürür."""
+    from datetime import datetime, timezone
+    import asyncio
+
+    async def _add():
+        if not payload:
+            return
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if not jti or not exp:
+            return
+        remaining = int(exp - datetime.now(timezone.utc).timestamp())
+        if remaining > 0:
+            await blocklist.add(jti, ttl_seconds=remaining)
+
+    return _add()
+
+
 @router.post("/logout")
 async def logout(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
     refresh_token_cookie: Optional[str] = Cookie(None, alias="refresh_token"),
     body: Optional[RefreshTokenRequest] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    blocklist: TokenBlocklistService = Depends(get_blocklist),
 ):
     """
-    Logout user by revoking refresh token
-
-    Accepts refresh token from cookie or body
+    Logout user by revoking refresh token and blocklisting current access token.
     """
-    token = refresh_token_cookie or (body.refresh_token if body else None)
+    # Access token'ı blocklist'e ekle (30 dk'lık geçerlilik penceresi kapatılır)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        payload = security_service.decode_token(auth_header[7:])
+        await _blocklist_access_token(payload, blocklist)
 
+    # Refresh token'ı iptal et
+    token = refresh_token_cookie or (body.refresh_token if body else None)
     if token:
         token_service = TokenService(db)
         await token_service.revoke_refresh_token(token)
 
-    # Clear refresh token cookie
     response.delete_cookie(key="refresh_token")
-
     return {"message": "Logged out successfully"}
 
 
 @router.post("/logout-all")
 async def logout_all_devices(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    blocklist: TokenBlocklistService = Depends(get_blocklist),
 ):
     """
-    Logout from all devices by revoking all user's refresh tokens
+    Logout from all devices: tüm refresh token'ları iptal eder,
+    mevcut access token'ı blocklist'e ekler.
     """
+    # Mevcut session'ın access token'ını blocklist'e ekle
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        payload = security_service.decode_token(auth_header[7:])
+        await _blocklist_access_token(payload, blocklist)
+
     token_service = TokenService(db)
     await token_service.revoke_all_user_tokens(current_user.id)
 
-    # Clear refresh token cookie
     response.delete_cookie(key="refresh_token")
-
     return {"message": "Logged out from all devices"}
 
 

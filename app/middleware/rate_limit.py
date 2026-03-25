@@ -105,10 +105,7 @@ async def rate_limit_forgot_password(request: Request):
 
     Limit: 3 requests per 15 minutes (900 seconds)
     """
-    import asyncio
-    return asyncio.create_task(
-        rate_limiter.check_rate_limit(request, max_requests=3, window_seconds=900)
-    )
+    await rate_limiter.check_rate_limit(request, max_requests=3, window_seconds=900)
 
 
 async def rate_limit_reset_password(request: Request):
@@ -117,10 +114,7 @@ async def rate_limit_reset_password(request: Request):
 
     Limit: 5 requests per 15 minutes (900 seconds)
     """
-    import asyncio
-    return asyncio.create_task(
-        rate_limiter.check_rate_limit(request, max_requests=5, window_seconds=900)
-    )
+    await rate_limiter.check_rate_limit(request, max_requests=5, window_seconds=900)
 
 
 async def rate_limit_login(request: Request):
@@ -129,10 +123,7 @@ async def rate_limit_login(request: Request):
 
     Limit: 5 requests per 5 minutes (300 seconds)
     """
-    import asyncio
-    return asyncio.create_task(
-        rate_limiter.check_rate_limit(request, max_requests=5, window_seconds=300)
-    )
+    await rate_limiter.check_rate_limit(request, max_requests=5, window_seconds=300)
 
 
 async def rate_limit_resend_verification(request: Request):
@@ -141,7 +132,13 @@ async def rate_limit_resend_verification(request: Request):
 
     Limit: 3 requests per 15 minutes (900 seconds)
     """
-    import asyncio
-    return asyncio.create_task(
-        rate_limiter.check_rate_limit(request, max_requests=3, window_seconds=900)
-    )
+    await rate_limiter.check_rate_limit(request, max_requests=3, window_seconds=900)
+
+
+async def rate_limit_signup(request: Request):
+    """
+    Rate limit for signup endpoint
+
+    Limit: 10 requests per 1 hour (3600 seconds)
+    """
+    await rate_limiter.check_rate_limit(request, max_requests=10, window_seconds=3600)
