@@ -1,8 +1,18 @@
 from enum import Enum
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 from typing import Optional, Any
 from datetime import datetime
 from uuid import UUID
+import re
+
+
+def _validate_language(v):
+    if v is None:
+        return v
+    v = str(v).strip().lower()
+    if not re.match(r'^[a-z]{2,5}$', v):
+        raise ValueError("language must be a 2-5 character ISO language code (e.g. 'en', 'tr')")
+    return v
 
 
 class UserSignup(BaseModel):
@@ -11,11 +21,16 @@ class UserSignup(BaseModel):
     password: str = Field(..., min_length=8, max_length=100)
     language: Optional[str] = Field(default="en", description="User's preferred language code (e.g., 'en', 'tr')")
 
+    @field_validator("language", mode="before")
+    @classmethod
+    def validate_language(cls, v):
+        return _validate_language(v)
+
 
 class UserLogin(BaseModel):
     """Schema for user login"""
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=1, max_length=100)
 
 
 class TokenResponse(BaseModel):
@@ -61,6 +76,11 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
     language: Optional[str] = Field(default="en", description="User's preferred language code")
 
+    @field_validator("language", mode="before")
+    @classmethod
+    def validate_language(cls, v):
+        return _validate_language(v)
+
 
 class ForgotPasswordResponse(BaseModel):
     """Schema for forgot password response"""
@@ -98,6 +118,11 @@ class ResendVerificationRequest(BaseModel):
     """Schema for resend verification request"""
     email: EmailStr
     language: Optional[str] = Field(default="en", description="User's preferred language code")
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def validate_language(cls, v):
+        return _validate_language(v)
 
 
 class ResendVerificationResponse(BaseModel):

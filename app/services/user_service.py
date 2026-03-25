@@ -23,7 +23,7 @@ class UserService:
         self.user_repo = UserRepository(db)
         self.token_service = TokenService(db)
         self.verification_service = EmailVerificationService(db)
-    
+
     async def signup(
         self,
         signup_data: UserSignup,
@@ -58,7 +58,7 @@ class UserService:
                 language=language,  # Pass language to email service
                 ip_address=ip_address
             )
-            logger.info(f"Verification email queued for user: {user.email} (language: {language})")
+            logger.info(f"Verification email queued for user_id={user.id} (language: {language})")
         else:
             # Fallback to synchronous if background_tasks not available
             try:
@@ -68,7 +68,7 @@ class UserService:
                     ip_address=ip_address
                 )
             except Exception as e:
-                logger.error(f"Failed to send verification email for user {user.email}: {str(e)}")
+                logger.error(f"Failed to send verification email for user_id={user.id}: {str(e)}")
 
         # Generate tokens (is_verified will be false initially)
         access_token = create_access_token(user)
