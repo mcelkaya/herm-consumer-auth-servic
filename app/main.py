@@ -32,8 +32,9 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Herm Auth Service",
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/herm-auth/docs" if settings.DEBUG else None,
+    redoc_url="/herm-auth/redoc" if settings.DEBUG else None,
+    openapi_url="/herm-auth/openapi.json" if settings.DEBUG else None,
     lifespan=lifespan,
 )
 
