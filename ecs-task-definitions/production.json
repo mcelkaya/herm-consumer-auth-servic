@@ -62,6 +62,10 @@
         {
           "name": "CORS_ORIGINS",
           "value": "https://app.herm.io,https://wizard.herm.io"
+        },
+        {
+          "name": "DEBUG",
+          "value": "true"
         }
       ],
       "environmentFiles": [],
