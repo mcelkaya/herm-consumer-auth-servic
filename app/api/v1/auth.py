@@ -320,12 +320,16 @@ async def reset_password(
 async def verify_email(
     token: str,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db)
 ) -> VerifyEmailResponse:
     """
-    Verify user's email address using token from email
+    Verify user's email address using token from email.
     
-    Returns a new access token with updated is_verified status
+    Acts as an auto-login: returns both access token and refresh token,
+    enabling cross-device session persistence. If the user clicks the
+    verification link on a different device (e.g. mobile), they will
+    be automatically logged in on that device.
 
     - **token**: Email verification token from email (query parameter)
 
@@ -333,14 +337,16 @@ async def verify_email(
         - message_key: Translation key for success message
         - message: Success message
         - access_token: New JWT token with is_verified=true
+        - refresh_token: Refresh token for session persistence
         - expires_in: Token expiration time in seconds
 
     Raises:
         400: Invalid or expired token
         404: User not found
     """
-    # Get client IP for audit trail
+    # Get client info for audit trail and refresh token tracking
     ip_address = request.client.host if request.client else None
+    device_info = request.headers.get("User-Agent")
 
     # Verify email and get user
     service = EmailVerificationService(db)
@@ -352,8 +358,29 @@ async def verify_email(
     # Generate new access token with updated is_verified status
     access_token = create_access_token(user)
 
+    # Create refresh token for cross-device auto-login
+    # This makes verification behave like a login — the user gets a
+    # full session regardless of which device they verify from
+    token_service = TokenService(db)
+    refresh_token_obj = await token_service.create_refresh_token(
+        user=user,
+        device_info=device_info,
+        ip_address=ip_address
+    )
+
+    # Set refresh token as HttpOnly cookie (same as login/signup)
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token_obj.token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+    )
+
     return VerifyEmailResponse(
         access_token=access_token,
+        refresh_token=refresh_token_obj.token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
