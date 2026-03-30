@@ -44,10 +44,6 @@
           "value": "herm_auth"
         },
         {
-          "name": "REDIS_URL",
-          "value": "redis://localhost:7379/0"
-        },
-        {
           "name": "AWS_REGION",
           "value": "eu-central-1"
         },
@@ -83,6 +79,10 @@
         {
           "name": "NOTIFICATION_QUEUE_URL",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-notification-queue_url"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_redis_url"
         }
       ],
       "ulimits": [],

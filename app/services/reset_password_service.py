@@ -88,7 +88,7 @@ class ResetPasswordService:
 
         # Check if user is active
         if not user.is_active:
-            logger.warning(f"Password reset attempted for inactive user: {user.email}")
+            logger.warning(f"Password reset attempted for inactive user_id={user.id}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is inactive"
@@ -113,7 +113,7 @@ class ResetPasswordService:
         await self.db.commit()
 
         logger.info(
-            f"Password successfully reset for user: {user.email} "
+            f"Password successfully reset for user_id={user.id} "
             f"(from IP: {ip_address or 'unknown'})"
         )
 

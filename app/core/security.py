@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
+from uuid import uuid4
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.core.config import settings
@@ -46,7 +47,8 @@ class SecurityService:
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
         
-        to_encode.update({"exp": expire, "type": "access"})
+        jti = to_encode.get("jti") or str(uuid4())
+        to_encode.update({"exp": expire, "type": "access", "jti": jti})
         encoded_jwt = jwt.encode(
             to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
         )
