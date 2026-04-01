@@ -8,7 +8,99 @@ on:
 
 
 jobs:
+  sast-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # For uploading SARIF results
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install SAST tools
+        run: |
+          pip install semgrep bandit pip-audit
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan \
+            --config "p/python" \
+            --config "p/fastapi" \
+            --config "p/jwt" \
+            --config "p/owasp-top-ten" \
+            --config "p/secrets" \
+            --config "p/sql-injection" \
+            --config "p/insecure-transport" \
+            --exclude ".venv" \
+            --exclude "venv" \
+            --exclude ".env*" \
+            --exclude "node_modules" \
+            --exclude ".git" \
+            --exclude "__pycache__" \
+            --json \
+            --output semgrep-results.json \
+            . || true
+
+      - name: Run Bandit
+        run: |
+          bandit -r . \
+            --exclude ".venv,venv,.env,.git,__pycache__" \
+            -f json \
+            -o bandit-results.json \
+            -ll || true
+
+      - name: Run pip-audit
+        run: |
+          pip-audit --format json -o pip-audit-results.json --skip-editable || true
+
+      - name: Upload SAST Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: sast-reports
+          path: |
+            semgrep-results.json
+            bandit-results.json
+            pip-audit-results.json
+          retention-days: 30
+
+      - name: Check for critical vulnerabilities
+        run: |
+          echo "Checking for critical/high severity findings..."
+          
+          # Check Semgrep results
+          SEMGREP_CRITICAL=$(cat semgrep-results.json 2>/dev/null | \
+            python3 -c "import sys,json; data=json.load(sys.stdin); \
+            print(len([r for r in data.get('results',[]) if r.get('extra',{}).get('severity','') == 'ERROR']))" 2>/dev/null || echo "0")
+          
+          # Check Bandit results
+          BANDIT_HIGH=$(cat bandit-results.json 2>/dev/null | \
+            python3 -c "import sys,json; data=json.load(sys.stdin); \
+            print(data.get('metrics',{}).get('_totals',{}).get('SEVERITY.HIGH',0))" 2>/dev/null || echo "0")
+          
+          echo "Semgrep critical findings: $SEMGREP_CRITICAL"
+          echo "Bandit high severity findings: $BANDIT_HIGH"
+          
+          # Fail if critical vulnerabilities found (optional - remove 'exit 1' to make it warning-only)
+          if [ "$SEMGREP_CRITICAL" -gt "0" ] || [ "$BANDIT_HIGH" -gt "0" ]; then
+            echo "⚠️ Critical security findings detected!"
+            echo "Review the SAST reports before deploying to production."
+            # exit 1  # Uncomment to block deployment on critical findings
+          fi
+
   deploy:
+    needs: sast-scan  # Deploy only after SAST scan completes
     runs-on: ubuntu-latest
     environment:
       name: Production

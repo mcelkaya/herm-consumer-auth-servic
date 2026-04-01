@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     PORT: int = 8001
+    HOST: str = "0.0.0.0"
 
     # Database
     DATABASE_URL: str

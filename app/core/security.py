@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from uuid import uuid4
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from app.core.config import settings
 
@@ -73,7 +74,7 @@ class SecurityService:
                 token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
             )
             return payload
-        except JWTError:
+        except PyJWTError:
             return None
 
 
