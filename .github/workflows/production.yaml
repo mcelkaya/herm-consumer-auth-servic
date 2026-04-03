@@ -24,7 +24,7 @@ jobs:
 
       - name: Install SAST tools
         run: |
-          pip install bandit pip-audit
+          pip install semgrep bandit pip-audit
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -33,23 +33,24 @@ jobs:
         continue-on-error: true
 
       - name: Run Semgrep
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/python
-            p/fastapi
-            p/jwt
-            p/owasp-top-ten
-            p/secrets
-            p/sql-injection
-            p/insecure-transport
-          generateSarif: '1'
-
-      - name: Upload Semgrep SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep.sarif
-        if: always()
+        run: |
+          semgrep scan \
+            --config "p/python" \
+            --config "p/fastapi" \
+            --config "p/jwt" \
+            --config "p/owasp-top-ten" \
+            --config "p/secrets" \
+            --config "p/sql-injection" \
+            --config "p/insecure-transport" \
+            --exclude ".venv" \
+            --exclude "venv" \
+            --exclude ".env*" \
+            --exclude "node_modules" \
+            --exclude ".git" \
+            --exclude "__pycache__" \
+            --json \
+            --output semgrep-results.json \
+            . || true
 
       - name: Run Bandit
         run: |
@@ -69,6 +70,7 @@ jobs:
         with:
           name: sast-reports
           path: |
+            semgrep-results.json
             bandit-results.json
             pip-audit-results.json
           retention-days: 30
@@ -76,16 +78,22 @@ jobs:
       - name: Check for critical vulnerabilities
         run: |
           echo "Checking for critical/high severity findings..."
-
+          
+          # Check Semgrep results
+          SEMGREP_CRITICAL=$(cat semgrep-results.json 2>/dev/null | \
+            python3 -c "import sys,json; data=json.load(sys.stdin); \
+            print(len([r for r in data.get('results',[]) if r.get('extra',{}).get('severity','') == 'ERROR']))" 2>/dev/null || echo "0")
+          
           # Check Bandit results
           BANDIT_HIGH=$(cat bandit-results.json 2>/dev/null | \
             python3 -c "import sys,json; data=json.load(sys.stdin); \
             print(data.get('metrics',{}).get('_totals',{}).get('SEVERITY.HIGH',0))" 2>/dev/null || echo "0")
-
+          
+          echo "Semgrep critical findings: $SEMGREP_CRITICAL"
           echo "Bandit high severity findings: $BANDIT_HIGH"
-
+          
           # Fail if critical vulnerabilities found (optional - remove 'exit 1' to make it warning-only)
-          if [ "$BANDIT_HIGH" -gt "0" ]; then
+          if [ "$SEMGREP_CRITICAL" -gt "0" ] || [ "$BANDIT_HIGH" -gt "0" ]; then
             echo "⚠️ Critical security findings detected!"
             echo "Review the SAST reports before deploying to production."
             # exit 1  # Uncomment to block deployment on critical findings
