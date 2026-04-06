@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.v1 import auth
+from app.api.v1 import admin_auth
 from app.middleware.security import SecurityHeadersMiddleware
 
 
@@ -67,6 +68,7 @@ async def health_check():
 
 # Include routers
 app.include_router(auth.router, prefix="/herm-auth/api/v1")
+app.include_router(admin_auth.router, prefix="/api/v1")
 
 
 # Exception handlers
