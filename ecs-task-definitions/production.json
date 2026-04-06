@@ -61,7 +61,7 @@
         },
         {
           "name": "CORS_ORIGINS",
-          "value": "https://app.herm.io,https://wizard.herm.io"
+          "value": "https://app.herm.io,https://wizard.herm.io,https://ministry.herm.io"
         },
         {
           "name": "DEBUG",
