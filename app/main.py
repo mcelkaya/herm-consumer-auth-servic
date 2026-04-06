@@ -68,7 +68,7 @@ async def health_check():
 
 # Include routers
 app.include_router(auth.router, prefix="/herm-auth/api/v1")
-app.include_router(admin_auth.router, prefix="/api/v1")
+app.include_router(admin_auth.router, prefix="/herm-auth/api/v1")
 
 
 # Exception handlers
