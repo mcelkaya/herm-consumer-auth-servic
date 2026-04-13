@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.core.security import security_service
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -41,7 +42,9 @@ class TokenService:
     async def verify_refresh_token(self, token: str) -> Optional[RefreshToken]:
         """Verify and return a refresh token if valid"""
         result = await self.db.execute(
-            select(RefreshToken).where(RefreshToken.token == token)
+            select(RefreshToken)
+            .options(selectinload(RefreshToken.user))
+            .where(RefreshToken.token == token)
         )
         refresh_token = result.scalar_one_or_none()
 
@@ -103,9 +106,9 @@ def create_access_token(user: User) -> str:
     """
     return security_service.create_access_token(
         data={
-            "sub": str(user.id), 
+            "sub": str(user.id),
             "email": user.email,
-            "is_verified": user.is_verified,  # ✅ ADD THIS LINE!
+            "is_verified": user.is_verified,
             "role": user.role
         }
     )
