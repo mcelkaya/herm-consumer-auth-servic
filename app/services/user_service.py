@@ -1,12 +1,12 @@
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
 from app.repositories.user_repository import UserRepository
 from app.core.security import security_service
-from app.schemas.user import UserSignup, UserLogin, TokenResponse, UserResponse
+from app.schemas.user import UserSignup, UserLogin, TokenResponse
 from app.models.user import User
-from app.services.sqs_producer import notification_producer
 from app.services.token_service import TokenService, create_access_token
 from app.services.email_verification_service import EmailVerificationService
 from app.core.config import settings
@@ -50,6 +50,14 @@ class UserService:
         # Get language from signup data (default to 'en' if not provided)
         language = signup_data.language or "en"
 
+        # Link referral signup in consumer-service if referral_code was provided.
+        if signup_data.referral_code:
+            await self._link_referral_signup(
+                user_id=user.id,
+                email=user.email,
+                referral_code=signup_data.referral_code,
+            )
+
         # Send verification email asynchronously
         if background_tasks:
             background_tasks.add_task(
@@ -83,7 +91,42 @@ class UserService:
             refresh_token=refresh_token.token,
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         )
-    
+
+    async def _link_referral_signup(self, user_id: UUID, email: str, referral_code: str) -> None:
+        """Notify consumer-service to mark referral as signed_up for this user."""
+        if not settings.CONSUMER_INTERNAL_BASE_URL or not settings.CONSUMER_INTERNAL_API_KEY:
+            logger.warning(
+                "Referral code provided but consumer internal API is not configured",
+                extra={"user_id": str(user_id)}
+            )
+            return
+
+        url = f"{settings.CONSUMER_INTERNAL_BASE_URL.rstrip('/')}/referrals/link-signup"
+        payload = {
+            "user_id": str(user_id),
+            "email": email,
+            "referral_code": referral_code,
+        }
+        headers = {"X-Internal-API-Key": settings.CONSUMER_INTERNAL_API_KEY}
+
+        try:
+            async with httpx.AsyncClient(timeout=settings.CONSUMER_INTERNAL_TIMEOUT_SECONDS) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                if response.status_code >= 400:
+                    logger.warning(
+                        "Referral signup linking request failed",
+                        extra={
+                            "user_id": str(user_id),
+                            "status_code": response.status_code,
+                            "response": response.text,
+                        },
+                    )
+        except Exception as exc:
+            logger.warning(
+                "Referral signup linking request errored",
+                extra={"user_id": str(user_id), "error": str(exc)},
+            )
+
     async def login(
         self,
         login_data: UserLogin,

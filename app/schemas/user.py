@@ -20,11 +20,22 @@ class UserSignup(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=100)
     language: Optional[str] = Field(default="en", description="User's preferred language code (e.g., 'en', 'tr')")
+    referral_code: Optional[str] = Field(default=None, description="Optional referral code (e.g., ABC123)")
 
     @field_validator("language", mode="before")
     @classmethod
     def validate_language(cls, v):
         return _validate_language(v)
+
+    @field_validator("referral_code", mode="before")
+    @classmethod
+    def validate_referral_code(cls, v):
+        if v is None:
+            return v
+        code = str(v).strip().upper()
+        if not re.match(r"^[A-Z0-9]{6,20}$", code):
+            raise ValueError("referral_code must be 6-20 uppercase alphanumeric characters")
+        return code
 
 
 class UserLogin(BaseModel):

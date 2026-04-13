@@ -59,6 +59,17 @@ class Settings(BaseSettings):
 
     NOTIFICATION_QUEUE_URL: str = "INFO"
 
+    # Consumer-service internal API (referral signup linkage)
+    CONSUMER_INTERNAL_BASE_URL: Optional[str] = Field(
+        default=None,
+        description="Base URL including /herm-consumer/internal/v1 (e.g. http://consumer-service:8000/herm-consumer/internal/v1)"
+    )
+    CONSUMER_INTERNAL_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Shared internal API key for consumer-service internal endpoints"
+    )
+    CONSUMER_INTERNAL_TIMEOUT_SECONDS: int = 5
+
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True

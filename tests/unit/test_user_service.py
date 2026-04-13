@@ -1,5 +1,6 @@
 import pytest
 from fastapi import HTTPException
+from unittest.mock import AsyncMock, patch
 from app.services.user_service import UserService
 from app.schemas.user import UserSignup, UserLogin
 
@@ -102,3 +103,20 @@ async def test_user_login_nonexistent_user(db_session):
         await user_service.login(login_data)
     
     assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_user_signup_with_referral_code_triggers_referral_linking(db_session):
+    """Regression: signup must propagate referral_code for DB attribution."""
+    user_service = UserService(db_session)
+    signup_data = UserSignup(
+        email="referred@example.com",
+        password="testpassword123",
+        referral_code="ABC123",
+    )
+
+    with patch.object(UserService, "_link_referral_signup", new_callable=AsyncMock, create=True) as mock_link:
+        await user_service.signup(signup_data)
+
+    mock_link.assert_awaited_once()
+

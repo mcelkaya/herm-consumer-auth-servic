@@ -114,3 +114,27 @@ class TestLanguageFieldValidation:
         assert lang_errors, (
             f"BUG: ForgotPasswordRequest accepted invalid language={bad_lang!r}."
         )
+
+
+# ---------------------------------------------------------------------------
+# BUG 3 - signup drops referral code metadata
+# ---------------------------------------------------------------------------
+
+
+class TestReferralCodeValidation:
+
+    @pytest.mark.unit
+    def test_signup_keeps_referral_code(self):
+        """
+        BUG: signup payload has no referral_code field, so referral attribution is lost.
+
+        FIX: UserSignup must accept optional referral_code and preserve it.
+        """
+        signup = UserSignup(
+            email="test@example.com",
+            password="ValidPass123",
+            referral_code="ABC123",
+        )
+
+        assert signup.referral_code == "ABC123"
+
