@@ -11,9 +11,26 @@ class UserRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def create(self, email: str, hashed_password: str) -> User:
+    async def create(
+        self,
+        email: str,
+        hashed_password: str,
+        utm_source: Optional[str] = None,
+        utm_medium: Optional[str] = None,
+        utm_campaign: Optional[str] = None,
+        utm_term: Optional[str] = None,
+        utm_content: Optional[str] = None,
+    ) -> User:
         """Create a new user"""
-        user = User(email=email, hashed_password=hashed_password)
+        user = User(
+            email=email,
+            hashed_password=hashed_password,
+            utm_source=utm_source,
+            utm_medium=utm_medium,
+            utm_campaign=utm_campaign,
+            utm_term=utm_term,
+            utm_content=utm_content,
+        )
         self.db.add(user)
         await self.db.flush()
         await self.db.refresh(user)

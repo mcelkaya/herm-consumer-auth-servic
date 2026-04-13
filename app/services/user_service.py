@@ -44,7 +44,12 @@ class UserService:
         hashed_password = security_service.get_password_hash(signup_data.password)
         user = await self.user_repo.create(
             email=signup_data.email,
-            hashed_password=hashed_password
+            hashed_password=hashed_password,
+            utm_source=signup_data.utm_source,
+            utm_medium=signup_data.utm_medium,
+            utm_campaign=signup_data.utm_campaign,
+            utm_term=signup_data.utm_term,
+            utm_content=signup_data.utm_content,
         )
 
         # Get language from signup data (default to 'en' if not provided)

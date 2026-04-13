@@ -159,7 +159,24 @@ async def refresh_access_token(
             detail="Invalid or expired refresh token"
         )
 
-    user = refresh_token_obj.user
+    # IMPORTANT:
+    # Do NOT use `refresh_token_obj.user` here in async SQLAlchemy,
+    # because it may trigger lazy loading and cause MissingGreenlet.
+    user = await db.get(User, refresh_token_obj.user_id)
+
+    if not user:
+        # Optional cleanup in case token points to a deleted user
+        await token_service.revoke_refresh_token(token)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive"
+        )
 
     # Create new access token
     access_token = create_access_token(user)
@@ -194,13 +211,13 @@ async def refresh_access_token(
             refresh_token=new_refresh_token.token,
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         )
-    else:
-        # Reuse same refresh token
-        return TokenResponse(
-            access_token=access_token,
-            refresh_token=token,
-            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        )
+
+    # Reuse same refresh token
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
 
 
 def _blocklist_access_token(payload: dict | None, blocklist: TokenBlocklistService):

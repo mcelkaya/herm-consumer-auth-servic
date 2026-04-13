@@ -22,6 +22,13 @@ class UserSignup(BaseModel):
     language: Optional[str] = Field(default="en", description="User's preferred language code (e.g., 'en', 'tr')")
     referral_code: Optional[str] = Field(default=None, description="Optional referral code (e.g., ABC123)")
 
+    # UTM tracking fields (all optional)
+    utm_source: Optional[str] = Field(default=None, max_length=255, description="UTM source parameter")
+    utm_medium: Optional[str] = Field(default=None, max_length=255, description="UTM medium parameter")
+    utm_campaign: Optional[str] = Field(default=None, max_length=255, description="UTM campaign parameter")
+    utm_term: Optional[str] = Field(default=None, max_length=255, description="UTM term parameter")
+    utm_content: Optional[str] = Field(default=None, max_length=255, description="UTM content parameter")
+
     @field_validator("language", mode="before")
     @classmethod
     def validate_language(cls, v):
