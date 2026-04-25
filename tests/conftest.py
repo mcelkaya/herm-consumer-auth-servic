@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from app.main import app
 from app.db.session import Base, get_db
 from app.core.config import settings
+import redis.asyncio as aioredis
 
 # Test database URL
 TEST_DATABASE_URL = settings.DATABASE_URL.replace("/email_integration", "/test_email_integration")
@@ -59,10 +60,21 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create test client"""
     async def override_get_db():
         yield db_session
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
-    
+
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def flush_rate_limit_keys():
+    """Delete all rate:* keys from Redis between tests to prevent bleed-over."""
+    yield
+    redis = aioredis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+    keys = await redis.keys("rate:*")
+    if keys:
+        await redis.delete(*keys)
+    await redis.aclose()

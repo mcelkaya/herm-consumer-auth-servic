@@ -17,6 +17,7 @@ from app.api.dependencies import get_blocklist, get_current_user
 from app.models.user import User
 from app.core.config import settings
 from app.core.security import security_service
+from app.core.audit_log import audit
 from app.services.token_blocklist_service import TokenBlocklistService
 from app.middleware.rate_limit import (
     rate_limit_forgot_password,
@@ -24,6 +25,7 @@ from app.middleware.rate_limit import (
     rate_limit_resend_verification,
     rate_limit_login,
     rate_limit_signup,
+    rate_limit_verify_email,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -107,9 +109,10 @@ async def login(
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
     )
 
+    audit("login_success", ip=ip_address, email=login_data.email)
     response.headers["Content-Type"] = "application/json"
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    
+
     return token_response
 
 
@@ -264,6 +267,8 @@ async def logout(
         token_service = TokenService(db)
         await token_service.revoke_refresh_token(token)
 
+    ip_address = request.client.host if request.client else None
+    audit("logout", ip=ip_address, user_id=str(current_user.id))
     response.delete_cookie(key="refresh_token")
     return {"message": "Logged out successfully"}
 
@@ -289,6 +294,8 @@ async def logout_all_devices(
     token_service = TokenService(db)
     await token_service.revoke_all_user_tokens(current_user.id)
 
+    ip_all = request.client.host if request.client else None
+    audit("logout_all_devices", ip=ip_all, user_id=str(current_user.id))
     response.delete_cookie(key="refresh_token")
     return {"message": "Logged out from all devices"}
 
@@ -327,6 +334,10 @@ async def forgot_password(
         ip_address=ip_address,
         expiry_hours=24  # Token valid for 24 hours
     )
+
+    import asyncio
+    # Constant-time response: prevents timing-based email enumeration
+    await asyncio.sleep(0.5)
 
     # ALWAYS return success message (don't reveal if email exists)
     return ForgotPasswordResponse()
@@ -374,7 +385,8 @@ async def verify_email(
     token: str,
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_verify_email),
 ) -> VerifyEmailResponse:
     """
     Verify user's email address using token from email.

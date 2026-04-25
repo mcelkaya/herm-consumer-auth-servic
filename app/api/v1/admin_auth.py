@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_blocklist
 from app.core.config import settings
+from app.middleware.rate_limit import rate_limit_admin_login
+from app.core.audit_log import audit
 from app.core.security import security_service
 from app.db.session import get_db
 from app.models.admin_user import AdminUser
@@ -135,6 +137,7 @@ async def admin_login(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_admin_login),
 ) -> AdminTokenResponse:
     """
     Authenticate an admin user and issue a token pair.
@@ -160,6 +163,7 @@ async def admin_login(
 
     _set_refresh_cookie(response, token_response.refresh_token)
 
+    audit("admin_login_success", ip=ip_address, email=credentials.email)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return token_response
 

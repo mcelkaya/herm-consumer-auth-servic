@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -77,6 +77,19 @@ class AdminTokenService:
             token.is_revoked = True
 
         await self.db.commit()
+
+    async def cleanup_stale_tokens(self) -> int:
+        """Delete revoked and expired admin refresh tokens in a single bulk query."""
+        result = await self.db.execute(
+            delete(AdminRefreshToken).where(
+                or_(
+                    AdminRefreshToken.is_revoked == True,  # noqa: E712
+                    AdminRefreshToken.expires_at < datetime.utcnow(),
+                )
+            )
+        )
+        await self.db.commit()
+        return result.rowcount
 
 
 def create_admin_access_token(admin_user: AdminUser) -> str:

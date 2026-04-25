@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.security import security_service
@@ -82,20 +82,18 @@ class TokenService:
 
         await self.db.commit()
 
-    async def cleanup_expired_tokens(self):
-        """Delete expired refresh tokens"""
+    async def cleanup_stale_tokens(self) -> int:
+        """Delete revoked and expired refresh tokens in a single bulk query."""
         result = await self.db.execute(
-            select(RefreshToken).where(
-                RefreshToken.expires_at < datetime.utcnow()
+            delete(RefreshToken).where(
+                or_(
+                    RefreshToken.is_revoked == True,  # noqa: E712
+                    RefreshToken.expires_at < datetime.utcnow(),
+                )
             )
         )
-        expired_tokens = result.scalars().all()
-
-        for token in expired_tokens:
-            await self.db.delete(token)
-
         await self.db.commit()
-        return len(expired_tokens)
+        return result.rowcount
 
 
 def create_access_token(user: User) -> str:

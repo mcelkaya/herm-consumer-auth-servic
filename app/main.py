@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
@@ -8,6 +9,9 @@ from app.core.config import settings
 from app.api.v1 import auth
 from app.api.v1 import admin_auth
 from app.middleware.security import SecurityHeadersMiddleware
+from app.db.session import AsyncSessionLocal
+from app.services.token_service import TokenService
+from app.services.admin_token_service import AdminTokenService
 
 
 class HealthCheckFilter(logging.Filter):
@@ -18,6 +22,19 @@ class HealthCheckFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 
+async def _cleanup_stale_tokens_loop() -> None:
+    """Delete revoked/expired refresh tokens every 24 hours."""
+    while True:
+        await asyncio.sleep(24 * 60 * 60)
+        try:
+            async with AsyncSessionLocal() as db:
+                deleted = await TokenService(db).cleanup_stale_tokens()
+                admin_deleted = await AdminTokenService(db).cleanup_stale_tokens()
+                logging.info("Token cleanup: %d consumer + %d admin tokens deleted", deleted, admin_deleted)
+        except Exception:
+            logging.exception("Token cleanup failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis = aioredis.from_url(
@@ -25,7 +42,9 @@ async def lifespan(app: FastAPI):
         encoding="utf-8",
         decode_responses=True,
     )
+    cleanup_task = asyncio.create_task(_cleanup_stale_tokens_loop())
     yield
+    cleanup_task.cancel()
     await app.state.redis.aclose()
 
 
