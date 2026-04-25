@@ -17,6 +17,8 @@ def _validate_language(v):
 
 class UserSignup(BaseModel):
     """Schema for user signup"""
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=100)
     language: Optional[str] = Field(default="en", description="User's preferred language code (e.g., 'en', 'tr')")

@@ -117,7 +117,38 @@ class TestLanguageFieldValidation:
 
 
 # ---------------------------------------------------------------------------
-# BUG 3 - signup drops referral code metadata
+# BUG 3 — UserSignup accepts unknown extra fields (mass assignment surface)
+# ---------------------------------------------------------------------------
+
+class TestSignupMassAssignment:
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("field", [
+        "role", "is_admin", "is_verified", "is_active", "is_superuser",
+        "admin", "superuser", "is_staff", "permissions", "scope",
+    ])
+    def test_signup_rejects_privileged_extra_fields(self, field: str):
+        """
+        UserSignup must reject unknown fields (extra="forbid") so that
+        privilege-escalation payloads like {"is_admin": true} are caught
+        at the schema layer with a 422, not silently dropped.
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            UserSignup(
+                email="test@example.com",
+                password="ValidPass123",
+                **{field: True},
+            )
+
+        errors = exc_info.value.errors()
+        assert any(field in str(e) for e in errors), (
+            f"BUG: UserSignup silently accepted extra field {field!r}. "
+            "Add model_config = ConfigDict(extra='forbid') to UserSignup."
+        )
+
+
+# ---------------------------------------------------------------------------
+# BUG 4 - signup drops referral code metadata
 # ---------------------------------------------------------------------------
 
 

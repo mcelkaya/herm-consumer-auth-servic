@@ -9,6 +9,29 @@ from app.core.security import security_service
 
 
 @pytest.mark.asyncio
+class TestAdminLoginNonExistentUser:
+    """Admin login must return 401 (not 500) for non-existent accounts."""
+
+    async def test_unknown_email_returns_401_not_500(self, client: AsyncClient):
+        """
+        BUG: verify_password("dummy", "dummy_hash_placeholder") throws because
+        "dummy_hash_placeholder" is not a valid bcrypt hash. The exception
+        propagates as HTTP 500 instead of 401.
+
+        FIX: Use a pre-hashed dummy value so the timing-constant path never
+        crashes.
+        """
+        response = await client.post(
+            "/herm-auth/api/v1/admin/auth/login",
+            json={"email": "nobody@example.com", "password": "anything"},
+        )
+        assert response.status_code == 401, (
+            f"BUG: expected 401 for unknown admin email, got {response.status_code}. "
+            "The dummy bcrypt hash in AdminAuthService.login is invalid and throws."
+        )
+
+
+@pytest.mark.asyncio
 class TestAdminLoginRateLimit:
     """Tests that admin login endpoint is rate limited."""
 

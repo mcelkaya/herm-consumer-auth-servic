@@ -10,6 +10,9 @@ from app.services.admin_token_service import AdminTokenService, create_admin_acc
 from app.core.config import settings
 
 
+_DUMMY_HASH = security_service.get_password_hash("__timing_dummy__")
+
+
 class AdminAuthService:
     """Business logic for admin authentication flows."""
 
@@ -43,8 +46,7 @@ class AdminAuthService:
         # Constant-time path: always verify even on miss to prevent
         # timing-based email enumeration.
         if not admin_user:
-            # Run a dummy verify so timing is similar to the real path.
-            security_service.verify_password("dummy", "dummy_hash_placeholder")
+            security_service.verify_password("dummy", _DUMMY_HASH)
             raise self._INVALID_CREDENTIALS
 
         if not security_service.verify_password(
