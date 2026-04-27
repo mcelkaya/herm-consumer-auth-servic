@@ -1,5 +1,5 @@
 # Build stage
-FROM python:3.11-slim as builder
+FROM python:3.11-slim@sha256:ff71127c215572121f1991bacf17f39ec5fcfd2de1f1c01a595835495bb9adfc as builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Runtime stage
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:ff71127c215572121f1991bacf17f39ec5fcfd2de1f1c01a595835495bb9adfc
 
 WORKDIR /app
 
