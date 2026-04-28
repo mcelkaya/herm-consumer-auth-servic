@@ -6,7 +6,7 @@ from app.schemas.user import (
     UserSignup, UserLogin, TokenResponse, UserResponse,
     RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse,
     ResetPasswordRequest, ResetPasswordResponse,
-    VerifyEmailResponse, ResendVerificationResponse
+    VerifyEmailRequest, VerifyEmailResponse, ResendVerificationResponse
 )
 from app.services.user_service import UserService
 from app.services.token_service import TokenService, create_access_token
@@ -380,9 +380,9 @@ async def reset_password(
     return ResetPasswordResponse()
 
 
-@router.get("/verify-email", response_model=VerifyEmailResponse, status_code=status.HTTP_200_OK)
+@router.post("/verify-email", response_model=VerifyEmailResponse, status_code=status.HTTP_200_OK)
 async def verify_email(
-    token: str,
+    body: VerifyEmailRequest,
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -416,7 +416,7 @@ async def verify_email(
     # Verify email and get user
     service = EmailVerificationService(db)
     user = await service.verify_email(
-        token=token,
+        token=body.token,
         ip_address=ip_address
     )
 
