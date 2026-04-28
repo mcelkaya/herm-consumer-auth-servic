@@ -23,29 +23,44 @@ class EmailVerificationService:
         self,
         user_id: UUID,
         ip_address: Optional[str],
-        expiry_hours: int = 24
+        expiry_hours: int = 24,
     ) -> EmailVerificationToken:
-        """Create email verification token and invalidate old ones"""
-        # Invalidate existing unused tokens for this user
+        """
+        Create a new email verification token for a user.
+
+        Any existing active tokens for this user are REVOKED (superseded),
+        not marked as used. This preserves the distinction between two
+        very different states:
+
+          - is_used=True       → token was successfully consumed by verification
+          - revoked_at IS NOT NULL → token was superseded by a newer one (resend)
+
+        Without this distinction, clicking an older verification email after
+        requesting a resend was being misclassified as suspicious activity
+        and rejected.
+        """
+        # Revoke (supersede) any existing active tokens for this user
         result = await self.db.execute(
             select(EmailVerificationToken).where(
                 and_(
                     EmailVerificationToken.user_id == user_id,
-                    EmailVerificationToken.is_used == False
+                    EmailVerificationToken.is_used == False,  # noqa: E712
+                    EmailVerificationToken.revoked_at.is_(None),
                 )
             )
         )
         old_tokens = result.scalars().all()
 
+        now = datetime.utcnow()
         for old_token in old_tokens:
-            old_token.is_used = True
+            old_token.revoked_at = now
 
         # Create new token
         token = EmailVerificationToken(
             token=EmailVerificationToken.generate_token(),
             user_id=user_id,
-            expires_at=datetime.utcnow() + timedelta(hours=expiry_hours),
-            ip_address=ip_address
+            expires_at=now + timedelta(hours=expiry_hours),
+            ip_address=ip_address,
         )
 
         self.db.add(token)
@@ -59,10 +74,10 @@ class EmailVerificationService:
         user: User,
         language: str = "en",
         ip_address: Optional[str] = None,
-        expiry_hours: int = 24
+        expiry_hours: int = 24,
     ) -> bool:
         """
-        Send email verification to user
+        Send email verification to user.
 
         Args:
             user: User object
@@ -73,16 +88,18 @@ class EmailVerificationService:
         Returns:
             True if email queued successfully, False otherwise
         """
-        # Create verification token
+        # Create verification token (revokes any existing active ones)
         verification_token = await self.create_verification_token(
             user.id, ip_address, expiry_hours
         )
 
         # Build verification link
-        verification_link = f"{settings.FRONTEND_URL}/verify-email?token={verification_token.token}"
+        verification_link = (
+            f"{settings.FRONTEND_URL}/verify-email?token={verification_token.token}"
+        )
 
         # Prepare user name (simple fallback since User model doesn't have name fields)
-        user_name = user.email.split('@')[0]
+        user_name = user.email.split("@")[0]
 
         # Send email verification notification via SQS
         message_id = notification_producer.send_email_verification(
@@ -91,7 +108,7 @@ class EmailVerificationService:
             verification_link=verification_link,
             user_id=user.id,
             language=language,
-            correlation_id=str(uuid4())
+            correlation_id=str(uuid4()),
         )
 
         logger.info(
@@ -103,14 +120,11 @@ class EmailVerificationService:
 
     async def verify_token(self, token: str) -> Optional[EmailVerificationToken]:
         """
-        Verify email verification token
+        Look up a verification token by its string value.
 
-        Returns:
-            EmailVerificationToken if valid, None otherwise
-            
-        Note: Returns token even if already used to support idempotent verification
-        (e.g., duplicate calls from frontend). The verify_email method will check
-        if user is already verified and handle accordingly.
+        Returns None for tokens that don't exist or are expired.
+        Returns the token object even if it is used or revoked — the caller
+        (verify_email) decides how to handle each state.
         """
         result = await self.db.execute(
             select(EmailVerificationToken).where(EmailVerificationToken.token == token)
@@ -121,20 +135,23 @@ class EmailVerificationService:
             logger.warning("Email verification attempted with non-existent token")
             return None
 
-        # Check if expired (but allow used tokens for idempotency)
         if verification_token.is_expired():
             logger.warning(
-                f"Email verification attempted with expired token for user {verification_token.user_id}"
+                f"Email verification attempted with expired token "
+                f"for user {verification_token.user_id}"
             )
             return None
 
-        # ✅ CHANGED: Don't reject used tokens here
-        # The verify_email method will check if user is already verified
-        # This allows idempotent verification (duplicate calls return same result)
         if verification_token.is_used:
             logger.info(
-                f"Email verification attempted with already-used token for user {verification_token.user_id} "
-                f"(allowing for idempotency check)"
+                f"Email verification attempted with already-used token "
+                f"for user {verification_token.user_id} (allowing for idempotency check)"
+            )
+
+        if verification_token.is_revoked():
+            logger.info(
+                f"Email verification attempted with revoked (superseded) token "
+                f"for user {verification_token.user_id}"
             )
 
         return verification_token
@@ -142,30 +159,30 @@ class EmailVerificationService:
     async def verify_email(
         self,
         token: str,
-        ip_address: Optional[str] = None
+        ip_address: Optional[str] = None,
     ) -> User:
         """
-        Verify user's email using token
-        
-        Idempotent: Returns success even if user already verified (for duplicate calls)
+        Verify user's email using a token.
 
-        Args:
-            token: Email verification token
-            ip_address: IP address of requester for audit
+        Idempotent: returns success even if user already verified (handles
+        duplicate calls e.g. from React StrictMode).
 
-        Returns:
-            User object with updated is_verified status
+        Token states handled:
+          - not found / expired                     → 400 invalid/expired
+          - revoked (superseded by resend)          → 400 with "use the latest email"
+          - already used + user already verified    → success (idempotency)
+          - already used + user NOT verified        → 400 (genuine replay/race)
+          - active + first-time use                 → mark used, mark user verified
 
         Raises:
-            HTTPException: If token is invalid, expired, or user not found
+            HTTPException: with appropriate status and message
         """
-        # Verify token (allows already-used tokens for idempotency)
         verification_token = await self.verify_token(token)
 
         if not verification_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification token"
+                detail="Invalid or expired verification token",
             )
 
         # Get user
@@ -178,27 +195,42 @@ class EmailVerificationService:
             logger.error(f"User not found for valid token: {verification_token.user_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                detail="User not found",
             )
 
-        # ✅ IDEMPOTENT: If already verified, just return success
-        # This handles duplicate calls from frontend (e.g., React StrictMode)
+        # IDEMPOTENT: If already verified, return success regardless of token state.
+        # Handles duplicate calls (e.g. React StrictMode) and the case where the user
+        # clicks the same link twice.
         if user.is_verified:
             logger.info(
                 f"Email verification: User already verified: {user.email} "
-                f"(token already used: {verification_token.is_used}) - returning success for idempotency"
+                f"(token used: {verification_token.is_used}, "
+                f"revoked: {verification_token.is_revoked()}) "
+                f"- returning success for idempotency"
             )
-            # Mark token as used if not already (shouldn't happen but safety check)
             if not verification_token.is_used:
                 verification_token.is_used = True
                 verification_token.used_at = datetime.utcnow()
                 await self.db.commit()
-            
-            # Return user so endpoint can generate fresh JWT token
             return user
 
-        # ✅ SECURITY CHECK: If token is already used but user NOT verified, reject
-        # This catches suspicious activity (token reuse after partial failure)
+        # User is NOT verified yet. Reject if the token is unusable:
+
+        # REVOKED: user clicked an older email after requesting a resend.
+        # This is normal user behavior, not malicious. Tell them to use the latest email.
+        if verification_token.is_revoked():
+            logger.info(
+                f"Email verification: Superseded token for unverified user {user.email} "
+                f"- user likely clicked an older email after requesting a resend"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This verification link has been replaced. Please use the most recent email.",
+            )
+
+        # USED but not revoked, on an unverified user → genuine replay/race.
+        # The token was successfully consumed once but verification didn't complete.
+        # Reject for safety.
         if verification_token.is_used:
             logger.warning(
                 f"Email verification: Token already used but user NOT verified: {user.email} "
@@ -206,10 +238,10 @@ class EmailVerificationService:
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification token"
+                detail="Invalid or expired verification token",
             )
 
-        # ✅ FIRST-TIME VERIFICATION: Update user status
+        # FIRST-TIME VERIFICATION: Update user status
         user.is_verified = True
         self.db.add(user)
 
@@ -220,7 +252,7 @@ class EmailVerificationService:
 
         # Commit changes
         await self.db.commit()
-        
+
         # Refresh user to get updated data
         await self.db.refresh(user)
 
@@ -233,7 +265,7 @@ class EmailVerificationService:
 
     async def cleanup_expired_tokens(self) -> int:
         """
-        Delete expired email verification tokens
+        Delete expired email verification tokens.
 
         Returns:
             Number of tokens deleted
@@ -250,5 +282,7 @@ class EmailVerificationService:
 
         await self.db.commit()
 
-        logger.info(f"Cleaned up {len(expired_tokens)} expired email verification tokens")
+        logger.info(
+            f"Cleaned up {len(expired_tokens)} expired email verification tokens"
+        )
         return len(expired_tokens)
