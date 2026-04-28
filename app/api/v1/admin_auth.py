@@ -200,7 +200,12 @@ async def admin_refresh(
             detail="Invalid or expired refresh token",
         )
 
-    admin_user = refresh_token_obj.admin_user
+    admin_user = await db.get(AdminUser, refresh_token_obj.admin_user_id)
+    if not admin_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
 
     # Ensure the admin account is still active at refresh time.
     if not admin_user.is_active:

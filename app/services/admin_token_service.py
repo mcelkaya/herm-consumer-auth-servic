@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.security import security_service
@@ -42,6 +43,7 @@ class AdminTokenService:
         """Return the AdminRefreshToken if it exists and is valid, else None."""
         result = await self.db.execute(
             select(AdminRefreshToken)
+            .options(selectinload(AdminRefreshToken.admin_user))
             .where(AdminRefreshToken.token == token)
         )
         refresh_token = result.scalar_one_or_none()
