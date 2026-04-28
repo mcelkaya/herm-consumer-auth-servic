@@ -16,11 +16,19 @@ class EmailVerificationToken(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     token = Column(String(64), unique=True, nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey(f"{settings.DATABASE_SCHEMA}.users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{settings.DATABASE_SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     expires_at = Column(DateTime(timezone=False), nullable=False)
     is_used = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=False), default=datetime.utcnow)
     used_at = Column(DateTime(timezone=False), nullable=True)
+    # Set when this token is superseded by a newer one (e.g. user requested
+    # a resend). Distinct from is_used, which means the token was actually
+    # consumed by a successful verification.
+    revoked_at = Column(DateTime(timezone=False), nullable=True)
     ip_address = Column(String(45), nullable=True)
 
     # Relationship with user
@@ -35,9 +43,13 @@ class EmailVerificationToken(Base):
         """Check if token is expired"""
         return datetime.utcnow() > self.expires_at
 
+    def is_revoked(self) -> bool:
+        """Check if token has been superseded by a newer one"""
+        return self.revoked_at is not None
+
     def is_valid(self) -> bool:
-        """Check if token is valid (not used and not expired)"""
-        return not self.is_used and not self.is_expired()
+        """Check if token is valid (not used, not revoked, not expired)"""
+        return not self.is_used and not self.is_revoked() and not self.is_expired()
 
     def __repr__(self):
         return f"<EmailVerificationToken {self.id} for user {self.user_id}>"
