@@ -17,7 +17,7 @@ from app.core.config import settings
 
 
 # revision identifiers, used by Alembic.
-revision = "009_add_revoked_at_to_email_verification_tokens"
+revision = "009_add_revoked_at_to_evt"
 down_revision = "008_add_marketing_consent"
 branch_labels = None
 depends_on = None
