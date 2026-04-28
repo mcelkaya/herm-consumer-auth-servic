@@ -23,6 +23,7 @@ class UserSignup(BaseModel):
     password: str = Field(..., min_length=8, max_length=100)
     language: Optional[str] = Field(default="en", description="User's preferred language code (e.g., 'en', 'tr')")
     referral_code: Optional[str] = Field(default=None, description="Optional referral code (e.g., ABC123)")
+    marketing_consent: bool = Field(default=False, description="User opted in to marketing emails")
 
     # UTM tracking fields (all optional)
     utm_source: Optional[str] = Field(default=None, max_length=255, description="UTM source parameter")

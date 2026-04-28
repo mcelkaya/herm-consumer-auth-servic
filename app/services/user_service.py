@@ -45,6 +45,7 @@ class UserService:
         user = await self.user_repo.create(
             email=signup_data.email,
             hashed_password=hashed_password,
+            marketing_consent=signup_data.marketing_consent,
             utm_source=signup_data.utm_source,
             utm_medium=signup_data.utm_medium,
             utm_campaign=signup_data.utm_campaign,

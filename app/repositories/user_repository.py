@@ -15,6 +15,7 @@ class UserRepository:
         self,
         email: str,
         hashed_password: str,
+        marketing_consent: bool = False,
         utm_source: Optional[str] = None,
         utm_medium: Optional[str] = None,
         utm_campaign: Optional[str] = None,
@@ -25,6 +26,7 @@ class UserRepository:
         user = User(
             email=email,
             hashed_password=hashed_password,
+            marketing_consent=marketing_consent,
             utm_source=utm_source,
             utm_medium=utm_medium,
             utm_campaign=utm_campaign,
