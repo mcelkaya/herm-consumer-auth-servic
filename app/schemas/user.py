@@ -109,10 +109,30 @@ class ForgotPasswordResponse(BaseModel):
     message: str = "If an account exists with this email, a password reset link has been sent."
 
 
+_SQL_INJECTION_PATTERN = re.compile(
+    r"(--|/\*|\*/|;\s*--|'\s*(or|and)\s*'|'\s*(or|and)\s+\d|union\s+select|drop\s+table|insert\s+into|delete\s+from|update\s+\w+\s+set)",
+    re.IGNORECASE,
+)
+
+
 class ResetPasswordRequest(BaseModel):
     """Schema for reset password request"""
     token: str = Field(..., min_length=1, description="Password reset token from email")
     new_password: str = Field(..., min_length=8, max_length=100, description="New password")
+
+    @field_validator("new_password", mode="before")
+    @classmethod
+    def sanitize_password(cls, v):
+        if v is None:
+            return v
+        v = str(v)
+        if "\x00" in v:
+            raise ValueError("password contains invalid characters")
+        if not v.isprintable():
+            raise ValueError("password must contain only printable characters")
+        if _SQL_INJECTION_PATTERN.search(v):
+            raise ValueError("password contains invalid character sequences")
+        return v
 
 
 class ResetPasswordResponse(BaseModel):

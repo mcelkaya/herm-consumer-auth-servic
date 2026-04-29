@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.v1 import auth
 from app.api.v1 import admin_auth
-from app.middleware.security import SecurityHeadersMiddleware
+from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizerMiddleware
 from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
 from app.services.admin_token_service import AdminTokenService
@@ -65,6 +65,7 @@ app = FastAPI(
 cors_origins = settings.CORS_ORIGINS
 
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(NullByteSanitizerMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

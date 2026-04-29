@@ -1,13 +1,15 @@
 """Security headers middleware for protecting against common web vulnerabilities"""
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
+from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 from app.core.config import settings
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: StarletteRequest, call_next):
         response: Response = await call_next(request)
 
         # Core security headers
@@ -15,7 +17,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        
+
         # Content Security Policy
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
@@ -28,7 +30,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "base-uri 'self'; "
             "form-action 'self'"
         )
-        
+
         # Permissions Policy
         response.headers["Permissions-Policy"] = (
             "camera=(), "
@@ -37,15 +39,42 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "payment=(), "
             "usb=()"
         )
-        
+
         # HTTP Strict Transport Security (always set for production)
         response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains; preload"
         )
-        
+
         # Cross-Origin headers for enhanced isolation
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
 
         return response
+
+
+class NullByteSanitizerMiddleware(BaseHTTPMiddleware):
+    """
+    Reject requests containing null bytes in any part of the request.
+
+    Prevents SQL injection, null byte injection, and other
+    injection attacks that use \x00 characters.
+    """
+
+    async def dispatch(self, request: StarletteRequest, call_next) -> Response:
+        # Check query string for null bytes
+        if "\x00" in str(request.url.query) or "\x00" in str(request.url.path):
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Request contains invalid characters"},
+            )
+
+        # Check headers for null bytes
+        for key, value in request.headers.items():
+            if "\x00" in str(key) or "\x00" in str(value):
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Request contains invalid characters"},
+                )
+
+        return await call_next(request)
