@@ -82,7 +82,7 @@
       "secrets": [
         {
           "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_auth_database_url"
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:373352901774:secret:prod/herm/auth/db-url-TyQ5sa:DATABASE_URL::"
         },
         {
           "name": "SECRET_KEY",
