@@ -27,15 +27,6 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/oauth/google/callback
 
-# Microsoft OAuth
-MICROSOFT_CLIENT_ID=your-microsoft-client-id
-MICROSOFT_CLIENT_SECRET=your-microsoft-client-secret
-MICROSOFT_REDIRECT_URI=http://localhost:8000/api/v1/oauth/microsoft/callback
-
-# Yahoo OAuth
-YAHOO_CLIENT_ID=your-yahoo-client-id
-YAHOO_CLIENT_SECRET=your-yahoo-client-secret
-YAHOO_REDIRECT_URI=http://localhost:8000/api/v1/oauth/yahoo/callback
 ```
 
 ### Step 3: Start Services

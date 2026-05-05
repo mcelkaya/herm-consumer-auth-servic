@@ -47,22 +47,6 @@
         {
           "name": "GOOGLE_CLIENT_SECRET",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:email-integration/google-client-secret"
-        },
-        {
-          "name": "MICROSOFT_CLIENT_ID",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:email-integration/microsoft-client-id"
-        },
-        {
-          "name": "MICROSOFT_CLIENT_SECRET",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:email-integration/microsoft-client-secret"
-        },
-        {
-          "name": "YAHOO_CLIENT_ID",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:email-integration/yahoo-client-id"
-        },
-        {
-          "name": "YAHOO_CLIENT_SECRET",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:email-integration/yahoo-client-secret"
         }
       ],
       "logConfiguration": {
