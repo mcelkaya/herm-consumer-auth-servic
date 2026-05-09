@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # Consumer-service internal API (referral signup linkage)
     CONSUMER_INTERNAL_BASE_URL: Optional[str] = Field(
         default=None,
-        description="Base URL including /herm-consumer/internal/v1 (e.g. http://consumer-service:8000/herm-consumer/internal/v1)"
+        description="Base URL including /herm-consumer/v1/internal (e.g. http://consumer-service:8000/herm-consumer/v1/internal)"
     )
     CONSUMER_INTERNAL_API_KEY: Optional[str] = Field(
         default=None,
