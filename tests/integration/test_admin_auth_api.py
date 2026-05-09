@@ -22,7 +22,7 @@ class TestAdminLoginNonExistentUser:
         crashes.
         """
         response = await client.post(
-            "/herm-auth/api/v1/admin/auth/login",
+            "/herm-auth/v1/admin/auth/login",
             json={"email": "nobody@example.com", "password": "anything"},
         )
         assert response.status_code == 401, (
@@ -52,13 +52,13 @@ class TestAdminLoginRateLimit:
         # Make 5 requests (the allowed limit)
         for _ in range(5):
             await client.post(
-                "/herm-auth/api/v1/admin/auth/login",
+                "/herm-auth/v1/admin/auth/login",
                 json={"email": "ratelimit_admin@example.com", "password": "correct_password"},
             )
 
         # 6th request must be rate-limited
         response = await client.post(
-            "/herm-auth/api/v1/admin/auth/login",
+            "/herm-auth/v1/admin/auth/login",
             json={"email": "ratelimit_admin@example.com", "password": "correct_password"},
         )
 

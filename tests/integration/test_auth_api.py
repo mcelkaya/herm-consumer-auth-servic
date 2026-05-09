@@ -6,7 +6,7 @@ from httpx import AsyncClient
 async def test_signup_endpoint(client: AsyncClient):
     """Test signup endpoint"""
     response = await client.post(
-        "/api/v1/auth/signup",
+        "/herm-auth/v1/public/auth/signup",
         json={
             "email": "test@example.com",
             "password": "testpassword123"
@@ -24,7 +24,7 @@ async def test_signup_endpoint(client: AsyncClient):
 async def test_signup_invalid_email(client: AsyncClient):
     """Test signup with invalid email"""
     response = await client.post(
-        "/api/v1/auth/signup",
+        "/herm-auth/v1/public/auth/signup",
         json={
             "email": "invalid-email",
             "password": "testpassword123"
@@ -38,7 +38,7 @@ async def test_signup_invalid_email(client: AsyncClient):
 async def test_signup_short_password(client: AsyncClient):
     """Test signup with short password"""
     response = await client.post(
-        "/api/v1/auth/signup",
+        "/herm-auth/v1/public/auth/signup",
         json={
             "email": "test@example.com",
             "password": "short"
@@ -53,7 +53,7 @@ async def test_login_endpoint(client: AsyncClient):
     """Test login endpoint"""
     # First signup
     await client.post(
-        "/api/v1/auth/signup",
+        "/herm-auth/v1/public/auth/signup",
         json={
             "email": "test@example.com",
             "password": "testpassword123"
@@ -62,7 +62,7 @@ async def test_login_endpoint(client: AsyncClient):
     
     # Then login
     response = await client.post(
-        "/api/v1/auth/login",
+        "/herm-auth/v1/public/auth/login",
         json={
             "email": "test@example.com",
             "password": "testpassword123"
@@ -80,7 +80,7 @@ async def test_get_current_user(client: AsyncClient):
     """Test get current user endpoint"""
     # Signup
     signup_response = await client.post(
-        "/api/v1/auth/signup",
+        "/herm-auth/v1/public/auth/signup",
         json={
             "email": "test@example.com",
             "password": "testpassword123"
@@ -91,7 +91,7 @@ async def test_get_current_user(client: AsyncClient):
     
     # Get current user
     response = await client.get(
-        "/api/v1/auth/me",
+        "/herm-auth/v1/pii/auth/me",
         headers={"Authorization": f"Bearer {token}"}
     )
     
@@ -106,7 +106,7 @@ async def test_get_current_user(client: AsyncClient):
 async def test_get_current_user_invalid_token(client: AsyncClient):
     """Test get current user with invalid token"""
     response = await client.get(
-        "/api/v1/auth/me",
+        "/herm-auth/v1/pii/auth/me",
         headers={"Authorization": "Bearer invalid_token"}
     )
     

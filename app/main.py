@@ -8,8 +8,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
-from app.api.v1 import auth
-from app.api.v1 import admin_auth
+from app.api.v1 import public_auth, pii_auth, admin_auth
 from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizerMiddleware
 from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
@@ -18,7 +17,7 @@ from app.services.admin_token_service import AdminTokenService
 
 class HealthCheckFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        return "/herm-auth/health" not in record.getMessage()
+        return "/herm-auth/v1/public/health" not in record.getMessage()
 
 
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
@@ -78,9 +77,8 @@ app.add_middleware(
 
 
 # Health check endpoint
-@app.get("/herm-auth/health", status_code=status.HTTP_200_OK)
+@app.get("/herm-auth/v1/public/health", status_code=status.HTTP_200_OK)
 async def health_check():
-    """Health check endpoint"""
     return {
         "status": "healthy",
         "service": settings.APP_NAME,
@@ -89,8 +87,9 @@ async def health_check():
 
 
 # Include routers
-app.include_router(auth.router, prefix="/herm-auth/api/v1")
-app.include_router(admin_auth.router, prefix="/herm-auth/api/v1")
+app.include_router(public_auth.router, prefix="/herm-auth/v1")
+app.include_router(pii_auth.router, prefix="/herm-auth/v1")
+app.include_router(admin_auth.router, prefix="/herm-auth/v1")
 
 
 # Exception handlers

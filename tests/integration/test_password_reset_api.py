@@ -12,7 +12,7 @@ from app.core.security import security_service
 
 @pytest.mark.asyncio
 class TestForgotPasswordEndpoint:
-    """Tests for /api/v1/auth/forgot-password endpoint"""
+    """Tests for /herm-auth/v1/public/auth/forgot-password endpoint"""
 
     async def test_forgot_password_with_existing_user_returns_200(
         self,
@@ -21,7 +21,7 @@ class TestForgotPasswordEndpoint:
     ):
         """Test forgot password with existing user returns 200"""
         response = await client.post(
-            "/api/v1/auth/forgot-password",
+            "/herm-auth/v1/public/auth/forgot-password",
             json={"email": test_user.email}
         )
 
@@ -36,7 +36,7 @@ class TestForgotPasswordEndpoint:
     ):
         """Test forgot password with non-existent user still returns 200 (security)"""
         response = await client.post(
-            "/api/v1/auth/forgot-password",
+            "/herm-auth/v1/public/auth/forgot-password",
             json={"email": "nonexistent@example.com"}
         )
 
@@ -52,7 +52,7 @@ class TestForgotPasswordEndpoint:
     ):
         """Test forgot password with invalid email format returns 422"""
         response = await client.post(
-            "/api/v1/auth/forgot-password",
+            "/herm-auth/v1/public/auth/forgot-password",
             json={"email": "not-an-email"}
         )
 
@@ -66,7 +66,7 @@ class TestForgotPasswordEndpoint:
     ):
         """Test that forgot password creates a password reset token"""
         response = await client.post(
-            "/api/v1/auth/forgot-password",
+            "/herm-auth/v1/public/auth/forgot-password",
             json={"email": test_user.email}
         )
 
@@ -104,7 +104,7 @@ class TestForgotPasswordEndpoint:
 
         # Request new token
         response = await client.post(
-            "/api/v1/auth/forgot-password",
+            "/herm-auth/v1/public/auth/forgot-password",
             json={"email": test_user.email}
         )
 
@@ -123,14 +123,14 @@ class TestForgotPasswordEndpoint:
         # Make 3 requests (the limit)
         for _ in range(3):
             response = await client.post(
-                "/api/v1/auth/forgot-password",
+                "/herm-auth/v1/public/auth/forgot-password",
                 json={"email": test_user.email}
             )
             assert response.status_code == 200
 
         # 4th request should be rate limited
         response = await client.post(
-            "/api/v1/auth/forgot-password",
+            "/herm-auth/v1/public/auth/forgot-password",
             json={"email": test_user.email}
         )
 
@@ -141,7 +141,7 @@ class TestForgotPasswordEndpoint:
 
 @pytest.mark.asyncio
 class TestResetPasswordEndpoint:
-    """Tests for /api/v1/auth/reset-password endpoint"""
+    """Tests for /herm-auth/v1/public/auth/reset-password endpoint"""
 
     async def test_reset_password_with_valid_token_returns_200(
         self,
@@ -161,7 +161,7 @@ class TestResetPasswordEndpoint:
         await db_session.commit()
 
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": token.token,
                 "new_password": "NewSecurePassword123!"
@@ -179,7 +179,7 @@ class TestResetPasswordEndpoint:
     ):
         """Test reset password with invalid token returns 400"""
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": "invalid_token",
                 "new_password": "NewSecurePassword123!"
@@ -208,7 +208,7 @@ class TestResetPasswordEndpoint:
         await db_session.commit()
 
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": token.token,
                 "new_password": "NewSecurePassword123!"
@@ -235,7 +235,7 @@ class TestResetPasswordEndpoint:
         await db_session.commit()
 
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": token.token,
                 "new_password": "NewSecurePassword123!"
@@ -266,7 +266,7 @@ class TestResetPasswordEndpoint:
         new_password = "NewSecurePassword123!"
 
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": token.token,
                 "new_password": new_password
@@ -300,7 +300,7 @@ class TestResetPasswordEndpoint:
         await db_session.commit()
 
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": token.token,
                 "new_password": "NewSecurePassword123!"
@@ -350,7 +350,7 @@ class TestResetPasswordEndpoint:
 
         # Reset password
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": reset_token.token,
                 "new_password": "NewSecurePassword123!"
@@ -384,7 +384,7 @@ class TestResetPasswordEndpoint:
 
         # Try with password that's too short
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": token.token,
                 "new_password": "short"  # Less than 8 characters
@@ -417,7 +417,7 @@ class TestResetPasswordEndpoint:
         # Make 5 requests (the limit)
         for i in range(5):
             response = await client.post(
-                "/api/v1/auth/reset-password",
+                "/herm-auth/v1/public/auth/reset-password",
                 json={
                     "token": tokens[i].token,
                     "new_password": f"NewPassword{i}123!"
@@ -427,7 +427,7 @@ class TestResetPasswordEndpoint:
 
         # 6th request should be rate limited
         response = await client.post(
-            "/api/v1/auth/reset-password",
+            "/herm-auth/v1/public/auth/reset-password",
             json={
                 "token": tokens[5].token,
                 "new_password": "NewPassword6123!"
