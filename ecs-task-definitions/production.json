@@ -99,6 +99,10 @@
         {
           "name": "CONSUMER_INTERNAL_API_KEY",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-internal_api_key"
+        },
+        {
+          "name": "INTERNAL_API_KEY",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-internal_api_key"
         }
       ],
       "ulimits": [],
