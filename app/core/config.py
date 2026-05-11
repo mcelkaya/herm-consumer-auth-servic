@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     )
     CONSUMER_INTERNAL_TIMEOUT_SECONDS: int = 5
 
+    # Inbound internal API key for endpoints under /herm-auth/v1/internal/*.
+    # Distinct from CONSUMER_INTERNAL_API_KEY which is the outbound key
+    # auth-service uses to call consumer-service.
+    INTERNAL_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Shared secret required on X-Internal-API-Key for /internal/* endpoints",
+    )
+
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True

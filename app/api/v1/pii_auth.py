@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,10 +11,20 @@ from app.core.security import security_service
 from app.core.audit_log import audit
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import TokenResponse, UserResponse, RefreshTokenRequest
-from app.services.token_service import TokenService, create_access_token
+from app.schemas.user import (
+    EmailAliasAddRequest,
+    EmailAliasResponse,
+    EmailEntryResponse,
+    EmailListResponse,
+    RefreshTokenRequest,
+    ResendAliasVerificationResponse,
+    TokenResponse,
+    UserResponse,
+)
+from app.services.email_alias_service import EmailAliasService
 from app.services.email_verification_service import EmailVerificationService
 from app.services.token_blocklist_service import TokenBlocklistService
+from app.services.token_service import TokenService, create_access_token
 from app.middleware.rate_limit import rate_limit_resend_verification
 
 router = APIRouter(prefix="/pii/auth", tags=["Authentication"])
@@ -190,3 +201,121 @@ async def resend_verification(
 
     from app.schemas.user import ResendVerificationResponse
     return ResendVerificationResponse()
+
+
+# =============================================================================
+# Email aliases — secondary emails on the current user's account
+#
+# All endpoints require a Bearer JWT (get_current_user). The user can only see
+# and mutate their own aliases. The primary email (users.email) is exposed
+# read-only in the list endpoint; it cannot be changed or removed here.
+#
+#   GET    /pii/auth/emails
+#     → list of all emails on the account (primary + aliases) with status
+#
+#   POST   /pii/auth/emails
+#     → add a new alias and send a verification email to it.
+#       Body: {email, language?}
+#
+#   POST   /pii/auth/emails/{alias_id}/resend-verification
+#     → re-send the verification email for an unverified alias.
+#       Same rate limit as /pii/auth/resend-verification (3 / 15 min / IP).
+#
+#   DELETE /pii/auth/emails/{alias_id}
+#     → remove an alias from the account. Primary cannot be removed (it has
+#       no alias_id). 404 if the alias doesn't belong to the caller.
+# =============================================================================
+
+
+@router.get("/emails", response_model=EmailListResponse)
+async def list_emails(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EmailListResponse:
+    service = EmailAliasService(db)
+    aliases = await service.list_for_user(current_user)
+
+    entries: list[EmailEntryResponse] = [
+        EmailEntryResponse(
+            id=None,
+            email=current_user.email,
+            is_verified=current_user.is_verified,
+            is_primary=True,
+            verified_at=None,
+            created_at=current_user.created_at,
+        )
+    ]
+    for alias in aliases:
+        entries.append(
+            EmailEntryResponse(
+                id=alias.id,
+                email=alias.email,
+                is_verified=alias.is_verified,
+                is_primary=False,
+                verified_at=alias.verified_at,
+                created_at=alias.created_at,
+            )
+        )
+    return EmailListResponse(emails=entries)
+
+
+@router.post(
+    "/emails",
+    response_model=EmailAliasResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_email_alias(
+    payload: EmailAliasAddRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EmailAliasResponse:
+    ip_address = request.client.host if request.client else None
+    service = EmailAliasService(db)
+    alias = await service.add_alias(
+        user=current_user,
+        email=str(payload.email),
+        language=payload.language or "en",
+        ip_address=ip_address,
+    )
+    audit("email_alias_added", ip=ip_address, user_id=str(current_user.id))
+    return EmailAliasResponse.model_validate(alias)
+
+
+@router.post(
+    "/emails/{alias_id}/resend-verification",
+    response_model=ResendAliasVerificationResponse,
+)
+async def resend_alias_verification(
+    alias_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_resend_verification),
+) -> ResendAliasVerificationResponse:
+    ip_address = request.client.host if request.client else None
+    accept_language = request.headers.get("Accept-Language", "en")
+    language = accept_language.split(",")[0].split("-")[0]
+
+    service = EmailAliasService(db)
+    await service.resend_verification(
+        user=current_user,
+        alias_id=alias_id,
+        language=language,
+        ip_address=ip_address,
+    )
+    return ResendAliasVerificationResponse()
+
+
+@router.delete("/emails/{alias_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_email_alias(
+    alias_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = EmailAliasService(db)
+    await service.remove_alias(current_user, alias_id)
+    ip_address = request.client.host if request.client else None
+    audit("email_alias_removed", ip=ip_address, user_id=str(current_user.id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID, uuid4
 from sqlalchemy import select, and_
@@ -6,11 +7,26 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.user_email_alias import UserEmailAlias
 from app.services.sqs_producer import notification_producer
 from app.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class VerifyEmailResult:
+    """Outcome of a verify_email call.
+
+    `kind` is "primary" when the token verified the user's signup email and
+    "alias" when it verified a secondary email. For alias verifications the
+    caller should NOT issue a fresh login session — the token represents
+    proof of email ownership only, not a login intent.
+    """
+    user: "User"
+    kind: str  # "primary" | "alias"
+    alias_email: Optional[str] = None
 
 
 class EmailVerificationService:
@@ -24,41 +40,46 @@ class EmailVerificationService:
         user_id: UUID,
         ip_address: Optional[str],
         expiry_hours: int = 24,
+        alias_email_id: Optional[UUID] = None,
     ) -> EmailVerificationToken:
         """
-        Create a new email verification token for a user.
+        Create a new email verification token.
 
-        Any existing active tokens for this user are REVOKED (superseded),
-        not marked as used. This preserves the distinction between two
-        very different states:
+        If alias_email_id is None, this is a primary email verification token
+        for the user; existing primary tokens for this user are revoked.
+
+        If alias_email_id is set, this is an alias verification token; only
+        existing tokens for THAT specific alias are revoked. Primary tokens
+        and tokens for other aliases are left untouched, since they each
+        carry independent state.
+
+        Any existing active tokens in scope are REVOKED (superseded), not
+        marked as used. This preserves the distinction:
 
           - is_used=True       → token was successfully consumed by verification
           - revoked_at IS NOT NULL → token was superseded by a newer one (resend)
-
-        Without this distinction, clicking an older verification email after
-        requesting a resend was being misclassified as suspicious activity
-        and rejected.
         """
-        # Revoke (supersede) any existing active tokens for this user
-        result = await self.db.execute(
-            select(EmailVerificationToken).where(
-                and_(
-                    EmailVerificationToken.user_id == user_id,
-                    EmailVerificationToken.is_used == False,  # noqa: E712
-                    EmailVerificationToken.revoked_at.is_(None),
-                )
-            )
+        scope = and_(
+            EmailVerificationToken.user_id == user_id,
+            EmailVerificationToken.is_used == False,  # noqa: E712
+            EmailVerificationToken.revoked_at.is_(None),
         )
+        if alias_email_id is None:
+            scope = and_(scope, EmailVerificationToken.alias_email_id.is_(None))
+        else:
+            scope = and_(scope, EmailVerificationToken.alias_email_id == alias_email_id)
+
+        result = await self.db.execute(select(EmailVerificationToken).where(scope))
         old_tokens = result.scalars().all()
 
         now = datetime.utcnow()
         for old_token in old_tokens:
             old_token.revoked_at = now
 
-        # Create new token
         token = EmailVerificationToken(
             token=EmailVerificationToken.generate_token(),
             user_id=user_id,
+            alias_email_id=alias_email_id,
             expires_at=now + timedelta(hours=expiry_hours),
             ip_address=ip_address,
         )
@@ -118,6 +139,49 @@ class EmailVerificationService:
 
         return True
 
+    async def send_alias_verification_email(
+        self,
+        user: User,
+        alias: UserEmailAlias,
+        language: str = "en",
+        ip_address: Optional[str] = None,
+        expiry_hours: int = 24,
+    ) -> bool:
+        """
+        Send a verification email to an alias address.
+
+        Uses the same /verify-email?token=... frontend route as primary
+        verification; the backend distinguishes alias tokens by
+        EmailVerificationToken.alias_email_id.
+        """
+        verification_token = await self.create_verification_token(
+            user.id, ip_address, expiry_hours, alias_email_id=alias.id
+        )
+
+        verification_link = (
+            f"{settings.FRONTEND_URL}/verify-email?token={verification_token.token}"
+        )
+
+        user_name = user.email.split("@")[0]
+
+        message_id = notification_producer.send_alias_email_verification(
+            email=alias.email,
+            user_name=user_name,
+            verification_link=verification_link,
+            user_id=user.id,
+            alias_email=alias.email,
+            language=language,
+            correlation_id=str(uuid4()),
+        )
+
+        logger.info(
+            f"Queued alias email verification notification: {message_id} "
+            f"for alias: {alias.email} (user_id={user.id}, language={language}, "
+            f"expires in {expiry_hours} hours)"
+        )
+
+        return True
+
     async def verify_token(self, token: str) -> Optional[EmailVerificationToken]:
         """
         Look up a verification token by its string value.
@@ -160,19 +224,22 @@ class EmailVerificationService:
         self,
         token: str,
         ip_address: Optional[str] = None,
-    ) -> User:
+    ) -> VerifyEmailResult:
         """
-        Verify user's email using a token.
+        Verify a primary or alias email using a token.
 
-        Idempotent: returns success even if user already verified (handles
-        duplicate calls e.g. from React StrictMode).
+        If the token has alias_email_id set, the alias is marked verified
+        and the owning User is returned (user.is_verified is NOT modified).
+        Otherwise the User's primary email is marked verified.
 
-        Token states handled:
+        Idempotent: returns success even if already verified.
+
+        Token states handled (primary):
           - not found / expired                     → 400 invalid/expired
           - revoked (superseded by resend)          → 400 with "use the latest email"
-          - already used + user already verified    → success (idempotency)
-          - already used + user NOT verified        → 400 (genuine replay/race)
-          - active + first-time use                 → mark used, mark user verified
+          - already used + already verified         → success (idempotency)
+          - already used + NOT verified             → 400 (genuine replay/race)
+          - active + first-time use                 → mark used, mark verified
 
         Raises:
             HTTPException: with appropriate status and message
@@ -198,6 +265,15 @@ class EmailVerificationService:
                 detail="User not found",
             )
 
+        # Alias verification path — same state machine, but operates on the
+        # UserEmailAlias row instead of User.
+        if verification_token.alias_email_id is not None:
+            return await self._verify_alias_with_token(
+                user=user,
+                verification_token=verification_token,
+                ip_address=ip_address,
+            )
+
         # IDEMPOTENT: If already verified, return success regardless of token state.
         # Handles duplicate calls (e.g. React StrictMode) and the case where the user
         # clicks the same link twice.
@@ -212,7 +288,7 @@ class EmailVerificationService:
                 verification_token.is_used = True
                 verification_token.used_at = datetime.utcnow()
                 await self.db.commit()
-            return user
+            return VerifyEmailResult(user=user, kind="primary")
 
         # User is NOT verified yet. Reject if the token is unusable:
 
@@ -261,7 +337,110 @@ class EmailVerificationService:
             f"(from IP: {ip_address or 'unknown'})"
         )
 
-        return user
+        return VerifyEmailResult(user=user, kind="primary")
+
+    async def _verify_alias_with_token(
+        self,
+        user: User,
+        verification_token: EmailVerificationToken,
+        ip_address: Optional[str],
+    ) -> VerifyEmailResult:
+        """Mark a UserEmailAlias as verified."""
+        result = await self.db.execute(
+            select(UserEmailAlias).where(
+                UserEmailAlias.id == verification_token.alias_email_id
+            )
+        )
+        alias = result.scalar_one_or_none()
+
+        if not alias:
+            logger.error(
+                f"Alias not found for valid token: "
+                f"alias_email_id={verification_token.alias_email_id} "
+                f"user_id={verification_token.user_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Email alias not found",
+            )
+
+        # IDEMPOTENT: alias already verified — succeed regardless of token state.
+        if alias.is_verified:
+            logger.info(
+                f"Alias email verification: alias already verified: {alias.email} "
+                f"(user_id={user.id}) — returning success for idempotency"
+            )
+            if not verification_token.is_used:
+                verification_token.is_used = True
+                verification_token.used_at = datetime.utcnow()
+                await self.db.commit()
+            return VerifyEmailResult(user=user, kind="alias", alias_email=alias.email)
+
+        # REVOKED → user clicked an older email after a resend.
+        if verification_token.is_revoked():
+            logger.info(
+                f"Alias email verification: superseded token for unverified alias "
+                f"{alias.email} (user_id={user.id})"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This verification link has been replaced. Please use the most recent email.",
+            )
+
+        # USED but not revoked, alias unverified → genuine replay.
+        if verification_token.is_used:
+            logger.warning(
+                f"Alias email verification: token already used but alias NOT verified: "
+                f"{alias.email} (user_id={user.id}) — rejecting"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token",
+            )
+
+        # First-time alias verification. Re-check the global uniqueness
+        # invariant — between alias creation and click, another user could
+        # have verified the same address. (DB partial-unique index will also
+        # block it, but we want a clean error message.)
+        from sqlalchemy import func as sa_func
+
+        dup = await self.db.execute(
+            select(UserEmailAlias).where(
+                and_(
+                    sa_func.lower(UserEmailAlias.email) == alias.email.lower(),
+                    UserEmailAlias.is_verified == True,  # noqa: E712
+                    UserEmailAlias.id != alias.id,
+                )
+            )
+        )
+        if dup.scalar_one_or_none() is not None:
+            logger.warning(
+                f"Alias email verification: address already verified by another user: "
+                f"{alias.email} (user_id={user.id})"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email is already verified on another account.",
+            )
+
+        now = datetime.utcnow()
+        alias.is_verified = True
+        alias.verified_at = now
+        self.db.add(alias)
+
+        verification_token.is_used = True
+        verification_token.used_at = now
+        self.db.add(verification_token)
+
+        await self.db.commit()
+        await self.db.refresh(alias)
+
+        logger.info(
+            f"Alias email verified: {alias.email} for user {user.id} "
+            f"(from IP: {ip_address or 'unknown'})"
+        )
+
+        return VerifyEmailResult(user=user, kind="alias", alias_email=alias.email)
 
     async def cleanup_expired_tokens(self) -> int:
         """

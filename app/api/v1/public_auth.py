@@ -145,11 +145,23 @@ async def verify_email(
     device_info = request.headers.get("User-Agent")
 
     service = EmailVerificationService(db)
-    user = await service.verify_email(
+    result = await service.verify_email(
         token=body.token,
         ip_address=ip_address
     )
 
+    # Alias verification → confirm ownership only, do not log the user in.
+    # The user might be clicking the link from a different device or while
+    # already signed in elsewhere; minting a new session would surprise them.
+    if result.kind == "alias":
+        return VerifyEmailResponse(
+            kind="alias",
+            alias_email=result.alias_email,
+            message_key="auth.verifyEmail.aliasSuccess",
+            message="Email address verified.",
+        )
+
+    user = result.user
     access_token = create_access_token(user)
 
     token_service = TokenService(db)
@@ -169,6 +181,7 @@ async def verify_email(
     )
 
     return VerifyEmailResponse(
+        kind="primary",
         access_token=access_token,
         refresh_token=refresh_token_obj.token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60

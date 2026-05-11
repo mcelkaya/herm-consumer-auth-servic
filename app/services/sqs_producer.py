@@ -184,6 +184,41 @@ class NotificationProducer:
         )
         return self._send_message(message)
 
+    def send_alias_email_verification(
+        self,
+        email: str,
+        user_name: str,
+        verification_link: str,
+        user_id: UUID,
+        alias_email: str,
+        language: str = "en",
+        correlation_id: str = None
+    ) -> str:
+        """Send a verification email for a secondary (alias) email address."""
+        message = NotificationMessage(
+            channel=Channel.EMAIL,
+            template_slug="alias_email_verification",
+            recipient=RecipientSchema(
+                email=email,
+                user_id=str(user_id),
+                name=user_name
+            ),
+            language=language,
+            variables={
+                "verification_link": verification_link,
+                "user_name": user_name,
+                "alias_email": alias_email,
+            },
+            priority=Priority.HIGH,
+            metadata={
+                "source_service": "auth-service",
+                "correlation_id": correlation_id or str(uuid4()),
+                "user_id": str(user_id),
+                "alias_email": alias_email,
+            }
+        )
+        return self._send_message(message)
+
 
 # Global instance
 notification_producer = NotificationProducer()

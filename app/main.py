@@ -8,7 +8,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
-from app.api.v1 import public_auth, pii_auth, admin_auth
+from app.api.v1 import public_auth, pii_auth, admin_auth, internal
 from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizerMiddleware
 from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
@@ -90,6 +90,7 @@ async def health_check():
 app.include_router(public_auth.router, prefix="/herm-auth/v1")
 app.include_router(pii_auth.router, prefix="/herm-auth/v1")
 app.include_router(admin_auth.router, prefix="/herm-auth/v1")
+app.include_router(internal.router, prefix="/herm-auth/v1")
 
 
 # Exception handlers

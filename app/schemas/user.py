@@ -148,12 +148,27 @@ class VerifyEmailRequest(BaseModel):
 
 
 class VerifyEmailResponse(BaseModel):
-    """Schema for email verification response with new access token and refresh token"""
+    """Response shape for /public/auth/verify-email.
+
+    `kind` discriminates between:
+
+      - "primary": the user's signup email was verified. The user is logged
+        in as part of the flow, so access_token / refresh_token / expires_in
+        are populated and a refresh_token cookie is set.
+
+      - "alias": a secondary email was verified. No session is issued —
+        alias verification only proves email ownership. The token fields
+        are null and `alias_email` is set so the frontend can show
+        "{alias} is now verified." The user keeps whatever session they
+        already had (if any).
+    """
     message_key: str = "auth.verifyEmail.success"
     message: str = "Email has been verified successfully."
-    access_token: str  # New JWT token with is_verified=true
-    refresh_token: str  # Refresh token for cross-device session persistence
-    expires_in: int  # Token expiration in seconds
+    kind: str = "primary"  # "primary" | "alias"
+    alias_email: Optional[str] = None
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
 
 
 class ResendVerificationRequest(BaseModel):
@@ -218,3 +233,59 @@ class NotificationMessage(BaseSchema):
     variables: dict[str, Any] = Field(default_factory=dict)
     priority: Priority = Field(default=Priority.STANDARD)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+# =============================================================================
+# Email aliases (secondary emails) — /pii/auth/emails
+# =============================================================================
+
+
+class EmailAliasAddRequest(BaseModel):
+    """Add a new secondary email to the current user's account."""
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    language: Optional[str] = Field(
+        default="en",
+        description="Language code for the verification email body (e.g. 'en', 'tr')",
+    )
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _v_language(cls, v):
+        return _validate_language(v)
+
+
+class EmailAliasResponse(BaseModel):
+    """One alias row in /pii/auth/emails responses."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: EmailStr
+    is_verified: bool
+    verified_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class EmailEntryResponse(BaseModel):
+    """Unified shape for primary email + aliases in the list endpoint.
+
+    `id` is null and `is_primary` is true for the user's primary email row,
+    which lives on `users.email` and has no alias UUID.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: Optional[UUID] = None
+    email: EmailStr
+    is_verified: bool
+    is_primary: bool
+    verified_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class EmailListResponse(BaseModel):
+    """All emails (primary + aliases) on the current user's account."""
+    emails: list[EmailEntryResponse]
+
+
+class ResendAliasVerificationResponse(BaseModel):
+    message: str = "Verification email sent. Please check your inbox."

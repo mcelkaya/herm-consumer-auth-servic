@@ -21,6 +21,14 @@ class EmailVerificationToken(Base):
         ForeignKey(f"{settings.DATABASE_SCHEMA}.users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # When set, this token verifies the referenced alias email instead of the
+    # user's primary email. user_id still references the owning user.
+    alias_email_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{settings.DATABASE_SCHEMA}.user_email_aliases.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     expires_at = Column(DateTime(timezone=False), nullable=False)
     is_used = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=False), default=datetime.utcnow)
@@ -33,6 +41,11 @@ class EmailVerificationToken(Base):
 
     # Relationship with user
     user = relationship("User", back_populates="email_verification_tokens")
+    alias = relationship(
+        "UserEmailAlias",
+        back_populates="verification_tokens",
+        foreign_keys=[alias_email_id],
+    )
 
     @staticmethod
     def generate_token() -> str:
