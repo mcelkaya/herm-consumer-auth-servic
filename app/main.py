@@ -1,13 +1,11 @@
 import asyncio
 import logging
-import uuid
 from contextlib import asynccontextmanager
 import redis.asyncio as aioredis
-from fastapi import FastAPI, Request, status
-from fastapi.exceptions import HTTPException
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from app.core.config import settings
+from app.core.error_handlers import register_exception_handlers
 from app.api.v1 import public_auth, pii_auth, admin_auth, internal
 from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizerMiddleware
 from app.db.session import AsyncSessionLocal
@@ -93,45 +91,7 @@ app.include_router(admin_auth.router, prefix="/herm-auth/v1")
 app.include_router(internal.router, prefix="/herm-auth/v1")
 
 
-# Exception handlers
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    error_id = str(uuid.uuid4())
-    logging.error(
-        "Unhandled exception [ID: %s]: %s",
-        error_id,
-        exc,
-        exc_info=True,
-        extra={
-            "error_id": error_id,
-            "path": request.url.path,
-            "method": request.method,
-            "client_ip": request.client.host if request.client else None,
-        },
-    )
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "An unexpected error occurred. Please try again later.", "error_id": error_id},
-    )
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code >= 500:
-        logging.error(
-            "HTTP %s: %s",
-            exc.status_code,
-            exc.detail,
-            extra={"path": request.url.path, "method": request.method},
-        )
-    elif exc.status_code >= 400:
-        logging.warning(
-            "HTTP %s: %s",
-            exc.status_code,
-            exc.detail,
-            extra={"path": request.url.path, "method": request.method},
-        )
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+register_exception_handlers(app)
 
 
 if __name__ == "__main__":

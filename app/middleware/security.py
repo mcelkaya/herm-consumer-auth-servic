@@ -6,10 +6,14 @@ from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 from app.core.config import settings
 
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: StarletteRequest, call_next):
+        if request.headers.get("sec-fetch-site") == "cross-site" and request.method in _UNSAFE_METHODS:
+            return JSONResponse(status_code=403, content={"detail": "Cross-site requests are not permitted"})
         response: Response = await call_next(request)
 
         # Core security headers
@@ -49,6 +53,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers["Cache-Control"] = "no-store"
+
+        content_type = response.headers.get("content-type", "")
+        if response.status_code >= 400 and "application/json" not in content_type:
+            response.headers["content-type"] = "application/json"
 
         return response
 
