@@ -66,3 +66,81 @@ async def rate_limit_signup(request: Request):
 
 async def rate_limit_verify_email(request: Request):
     await _check_rate_limit(request, "verify_email", max_requests=3, window_seconds=900)
+
+
+# ---------------------------------------------------------------------------
+# Email alias limits
+#
+# These are keyed by IDs from the validated JWT / DB (user id, alias id), NOT
+# by client IP. The IP limiters above read X-Forwarded-For, whose first hop is
+# client-controlled and therefore spoofable; an authenticated, per-resource
+# key cannot be bypassed that way.
+# ---------------------------------------------------------------------------
+
+# Max new aliases a single user may create per rolling 24h window.
+ALIAS_ADD_DAILY_MAX = 3
+ALIAS_ADD_WINDOW_SECONDS = 24 * 60 * 60
+
+# Max verification resends per individual alias per window.
+ALIAS_RESEND_MAX = 3
+ALIAS_RESEND_WINDOW_SECONDS = 15 * 60
+
+
+async def assert_alias_add_quota(request: Request, user_id: str) -> None:
+    """Reject if the user already hit the daily new-alias limit.
+
+    Read-only check. Only *successful* adds are counted (see record_alias_add),
+    so duplicate/invalid attempts don't burn a slot, and because the counter
+    never decrements, add -> delete -> add can't be used to send more than
+    ALIAS_ADD_DAILY_MAX verification emails per day.
+    """
+    redis: aioredis.Redis = request.app.state.redis
+    key = f"rate:add_alias:{user_id}"
+    current = await redis.get(key)
+    if current is not None and int(current) >= ALIAS_ADD_DAILY_MAX:
+        ttl = max(await redis.ttl(key), 0)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"You can add at most {ALIAS_ADD_DAILY_MAX} email addresses "
+                f"per day. Try again in {ttl} seconds."
+            ),
+            headers={"Retry-After": str(ttl)},
+        )
+
+
+async def record_alias_add(request: Request, user_id: str) -> None:
+    """Count one *successful* alias creation toward the per-user daily quota.
+
+    Call this only after the alias was created and its email queued, so failed
+    adds (409 duplicate, 400 invalid) never consume quota.
+    """
+    redis: aioredis.Redis = request.app.state.redis
+    key = f"rate:add_alias:{user_id}"
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, ALIAS_ADD_WINDOW_SECONDS)
+
+
+async def assert_alias_resend_quota(request: Request, alias_id: str) -> None:
+    """Per-alias resend limit, keyed by the server-generated alias UUID.
+
+    Caps how many verification emails can be sent to one alias address in a
+    window. Call this only after confirming the alias belongs to the caller,
+    so a guessed alias id can't be used to drain another user's quota.
+    """
+    redis: aioredis.Redis = request.app.state.redis
+    key = f"rate:alias_resend:{alias_id}"
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, ALIAS_RESEND_WINDOW_SECONDS)
+    if count > ALIAS_RESEND_MAX:
+        ttl = max(await redis.ttl(key), 0)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Too many verification emails for this address. "
+                f"Try again in {ttl} seconds."
+            ),
+            headers={"Retry-After": str(ttl)},
+        )

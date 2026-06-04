@@ -1,7 +1,7 @@
 from enum import Enum
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, field_serializer
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 import re
 
@@ -13,6 +13,25 @@ def _validate_language(v):
     if not re.match(r'^[a-z]{2,5}$', v):
         raise ValueError("language must be a 2-5 character ISO language code (e.g. 'en', 'tr')")
     return v
+
+
+def _to_utc_iso(value: Optional[datetime]) -> Optional[str]:
+    """Serialize a datetime as RFC 3339 UTC with a trailing 'Z'.
+
+    Some source columns are timezone-aware (users.created_at) and some are
+    naive UTC (alias timestamps written with datetime.utcnow()). Normalizing
+    on the way out guarantees every datetime in a response uses one identical
+    format regardless of which column it came from, so the frontend never has
+    to handle a mix of offset-bearing and offset-less timestamps.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        # Stored naive == UTC by convention in this service.
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat().replace("+00:00", "Z")
 
 
 class UserSignup(BaseModel):
@@ -188,6 +207,28 @@ class ResendVerificationResponse(BaseModel):
     message: str = "If an account exists with this email, a verification link has been sent."
 
 
+class LanguagePreference(BaseModel):
+    """Optional request body carrying just the caller's preferred language.
+
+    Used by authenticated endpoints that send an email but otherwise take no
+    input (primary resend-verification, alias resend) so the language source
+    is the request body everywhere — the same pattern as signup / forgot
+    password — and is validated identically (_validate_language). The body is
+    optional; an absent body falls back to "en".
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    language: Optional[str] = Field(
+        default="en",
+        description="Preferred language code for the outbound email (e.g. 'en', 'tr')",
+    )
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _v_language(cls, v):
+        return _validate_language(v)
+
+
 # SQS Notification Schemas
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
@@ -265,12 +306,20 @@ class EmailAliasResponse(BaseModel):
     verified_at: Optional[datetime] = None
     created_at: datetime
 
+    @field_serializer("verified_at", "created_at", when_used="json")
+    def _serialize_datetimes(self, value: Optional[datetime]) -> Optional[str]:
+        return _to_utc_iso(value)
+
 
 class EmailEntryResponse(BaseModel):
     """Unified shape for primary email + aliases in the list endpoint.
 
     `id` is null and `is_primary` is true for the user's primary email row,
     which lives on `users.email` and has no alias UUID.
+
+    Note: the primary row's `verified_at` is always null (the users table has
+    no such column); read `is_verified` for the primary's status. All datetime
+    fields are serialized as UTC ISO 8601 with a trailing 'Z'.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -280,6 +329,10 @@ class EmailEntryResponse(BaseModel):
     is_primary: bool
     verified_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
+
+    @field_serializer("verified_at", "created_at", when_used="json")
+    def _serialize_datetimes(self, value: Optional[datetime]) -> Optional[str]:
+        return _to_utc_iso(value)
 
 
 class EmailListResponse(BaseModel):

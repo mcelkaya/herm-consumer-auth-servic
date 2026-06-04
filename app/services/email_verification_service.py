@@ -423,6 +423,28 @@ class EmailVerificationService:
                 detail="This email is already verified on another account.",
             )
 
+        # Also ensure no OTHER user owns this address as their PRIMARY email.
+        # The partial unique index only covers verified alias rows, so without
+        # this a race — alias claimed before another user signs up with the
+        # same address as primary — could leave two users owning one address.
+        primary_owner = await self.db.execute(
+            select(User).where(
+                and_(
+                    sa_func.lower(User.email) == alias.email.lower(),
+                    User.id != user.id,
+                )
+            )
+        )
+        if primary_owner.scalar_one_or_none() is not None:
+            logger.warning(
+                f"Alias email verification: address is another user's primary "
+                f"email: {alias.email} (user_id={user.id})"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email is already in use on another account.",
+            )
+
         now = datetime.utcnow()
         alias.is_verified = True
         alias.verified_at = now

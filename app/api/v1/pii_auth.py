@@ -16,6 +16,7 @@ from app.schemas.user import (
     EmailAliasResponse,
     EmailEntryResponse,
     EmailListResponse,
+    LanguagePreference,
     RefreshTokenRequest,
     ResendAliasVerificationResponse,
     TokenResponse,
@@ -25,7 +26,12 @@ from app.services.email_alias_service import EmailAliasService
 from app.services.email_verification_service import EmailVerificationService
 from app.services.token_blocklist_service import TokenBlocklistService
 from app.services.token_service import TokenService, create_access_token
-from app.middleware.rate_limit import rate_limit_resend_verification
+from app.middleware.rate_limit import (
+    assert_alias_add_quota,
+    assert_alias_resend_quota,
+    rate_limit_resend_verification,
+    record_alias_add,
+)
 
 router = APIRouter(prefix="/pii/auth", tags=["Authentication"])
 
@@ -180,6 +186,7 @@ async def resend_verification(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    body: Optional[LanguagePreference] = None,
     _: None = Depends(rate_limit_resend_verification)
 ):
     if current_user.is_verified:
@@ -189,8 +196,7 @@ async def resend_verification(
         )
 
     ip_address = request.client.host if request.client else None
-    accept_language = request.headers.get("Accept-Language", "en")
-    language = accept_language.split(',')[0].split('-')[0]
+    language = (body.language if body else None) or "en"
 
     service = EmailVerificationService(db)
     await service.send_verification_email(
@@ -216,10 +222,14 @@ async def resend_verification(
 #   POST   /pii/auth/emails
 #     → add a new alias and send a verification email to it.
 #       Body: {email, language?}
+#       Limit: at most 3 new aliases per user per rolling 24h (only successful
+#       adds count). 429 when exceeded.
 #
 #   POST   /pii/auth/emails/{alias_id}/resend-verification
 #     → re-send the verification email for an unverified alias.
-#       Same rate limit as /pii/auth/resend-verification (3 / 15 min / IP).
+#       Body: {language?}
+#       Limit: per-alias (3 / 15 min, keyed by alias id) AND the shared IP
+#       resend limit. 429 when exceeded.
 #
 #   DELETE /pii/auth/emails/{alias_id}
 #     → remove an alias from the account. Primary cannot be removed (it has
@@ -270,6 +280,8 @@ async def add_email_alias(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> EmailAliasResponse:
+    await assert_alias_add_quota(request, str(current_user.id))
+
     ip_address = request.client.host if request.client else None
     service = EmailAliasService(db)
     alias = await service.add_alias(
@@ -278,6 +290,8 @@ async def add_email_alias(
         language=payload.language or "en",
         ip_address=ip_address,
     )
+    # Count only after a successful create + queued email.
+    await record_alias_add(request, str(current_user.id))
     audit("email_alias_added", ip=ip_address, user_id=str(current_user.id))
     return EmailAliasResponse.model_validate(alias)
 
@@ -291,16 +305,27 @@ async def resend_alias_verification(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    body: Optional[LanguagePreference] = None,
     _: None = Depends(rate_limit_resend_verification),
 ) -> ResendAliasVerificationResponse:
     ip_address = request.client.host if request.client else None
-    accept_language = request.headers.get("Accept-Language", "en")
-    language = accept_language.split(",")[0].split("-")[0]
+    language = (body.language if body else None) or "en"
 
     service = EmailAliasService(db)
-    await service.resend_verification(
+    # Confirm ownership BEFORE counting against the per-alias quota, so a
+    # guessed alias id can't be used to drain another user's resend budget.
+    alias = await service.get_for_user(current_user, alias_id)
+    if alias.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This email is already verified",
+        )
+
+    await assert_alias_resend_quota(request, str(alias_id))
+
+    await service.verification_service.send_alias_verification_email(
         user=current_user,
-        alias_id=alias_id,
+        alias=alias,
         language=language,
         ip_address=ip_address,
     )
