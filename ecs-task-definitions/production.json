@@ -65,7 +65,7 @@
         },
         {
           "name": "CONSUMER_INTERNAL_BASE_URL",
-          "value": "http://herm-consumer-service:8000/herm-consumer/v1/internal"
+          "value": "http://prod-consumer:8000/herm-consumer/v1/internal"
         },
         {
           "name": "CONSUMER_INTERNAL_TIMEOUT_SECONDS",
