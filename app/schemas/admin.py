@@ -45,3 +45,12 @@ class AdminUserResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class RegistrationStatsResponse(BaseModel):
+    """User registration counts over rolling windows."""
+
+    daily: int  # last 24 hours
+    weekly: int  # last 7 days
+    monthly: int  # last 30 days
+    total: int

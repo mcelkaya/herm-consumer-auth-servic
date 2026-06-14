@@ -10,11 +10,13 @@ from app.core.audit_log import audit
 from app.core.security import security_service
 from app.db.session import get_db
 from app.models.admin_user import AdminUser
+from app.repositories.user_repository import UserRepository
 from app.schemas.admin import (
     AdminLogin,
     AdminRefreshTokenRequest,
     AdminTokenResponse,
     AdminUserResponse,
+    RegistrationStatsResponse,
 )
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_token_service import AdminTokenService, create_admin_access_token
@@ -281,3 +283,16 @@ async def admin_me(
     Return the profile of the currently authenticated admin user.
     """
     return AdminUserResponse.model_validate(current_admin)
+
+
+@router.get("/stats/registrations", response_model=RegistrationStatsResponse)
+async def get_registration_stats(
+    _admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> RegistrationStatsResponse:
+    """
+    User registration statistics: daily / weekly / monthly / total (rolling window).
+    """
+    repo = UserRepository(db)
+    counts = await repo.get_registration_counts()
+    return RegistrationStatsResponse(**counts)

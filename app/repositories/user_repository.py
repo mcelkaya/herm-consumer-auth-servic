@@ -1,16 +1,31 @@
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 
 
 class UserRepository:
     """Repository for User database operations"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
+    async def get_registration_counts(self) -> dict:
+        """User registration counts for the last 24h / 7d / 30d and total (rolling window)."""
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            select(
+                func.count().filter(User.created_at >= now - timedelta(days=1)).label("daily"),
+                func.count().filter(User.created_at >= now - timedelta(days=7)).label("weekly"),
+                func.count().filter(User.created_at >= now - timedelta(days=30)).label("monthly"),
+                func.count().label("total"),
+            )
+        )
+        row = result.one()
+        return {"daily": row.daily, "weekly": row.weekly, "monthly": row.monthly, "total": row.total}
+
     async def create(
         self,
         email: str,
