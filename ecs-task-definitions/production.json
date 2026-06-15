@@ -74,6 +74,22 @@
         {
           "name": "DEBUG",
           "value": "true"
+        },
+        {
+          "name": "GOOGLE_CLIENT_IDS",
+          "value": "934396523951-me00jr2s650c6cebkqcufu76c5hq5mne.apps.googleusercontent.com,934396523951-d49mkp2amoe40n3kipr1bc5hinqoo2g4.apps.googleusercontent.com,934396523951-o4vp3nok689ku6rbd7vqi43bj7520onn.apps.googleusercontent.com"
+        },
+        {
+          "name": "APPLE_CLIENT_IDS",
+          "value": "io.herm.mobile"
+        },
+        {
+          "name": "FACEBOOK_APP_ID",
+          "value": "4319859038272210"
+        },
+        {
+          "name": "FACEBOOK_EMAIL_VERIFIED_DEFAULT",
+          "value": "true"
         }
       ],
       "environmentFiles": [],
@@ -103,6 +119,10 @@
         {
           "name": "INTERNAL_API_KEY",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-internal_api_key"
+        },
+        {
+          "name": "FACEBOOK_APP_SECRET",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-facebook_app_secret"
         }
       ],
       "ulimits": [],

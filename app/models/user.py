@@ -15,7 +15,7 @@ class User(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=True)
     role = Column(String(50), default="user", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
@@ -47,6 +47,13 @@ class User(Base):
     # Relationship with email verification tokens
     email_verification_tokens = relationship(
         "EmailVerificationToken",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+    # Relationship with linked social-login identities (Google / Apple / Facebook)
+    oauth_accounts = relationship(
+        "UserOAuthAccount",
         back_populates="user",
         cascade="all, delete-orphan"
     )

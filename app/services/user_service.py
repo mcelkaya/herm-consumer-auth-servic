@@ -148,6 +148,16 @@ class UserService:
                 detail="Incorrect email or password"
             )
 
+        # Social-only accounts have no password (hashed_password is NULL).
+        # Treat a password login attempt against one exactly like a wrong
+        # password — never reveal that the account exists but is social-only,
+        # and never hand a NULL hash to passlib (which would raise).
+        if not user.hashed_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password"
+            )
+
         # Verify password
         if not security_service.verify_password(login_data.password, user.hashed_password):
             raise HTTPException(
