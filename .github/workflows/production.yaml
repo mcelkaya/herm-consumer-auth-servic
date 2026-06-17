@@ -5,6 +5,12 @@ on:
     types: [published]
   push:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to build & deploy (e.g. v1.2.3). Leave blank to use the commit SHA."
+        required: false
+        type: string
 
 
 jobs:
@@ -121,8 +127,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract tag name
-        run: echo "IMAGE_TAG=$(echo $GITHUB_REF | cut -d '/' -f 3)" >> $GITHUB_ENV
+      - name: Determine image tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+              echo "IMAGE_TAG=${{ github.event.inputs.image_tag }}" >> $GITHUB_ENV
+            else
+              echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+            fi
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            echo "IMAGE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            # push to main
+            echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          fi
 
       - name: Login to Amazon ECR
         with:
