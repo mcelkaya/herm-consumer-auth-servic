@@ -10,9 +10,14 @@ def _validate_language(v):
     if v is None:
         return v
     v = str(v).strip().lower()
-    if not re.match(r'^[a-z]{2,5}$', v):
-        raise ValueError("language must be a 2-5 character ISO language code (e.g. 'en', 'tr')")
-    return v
+    if not v:
+        return None
+    # Browsers send BCP-47 locales like "tr-TR" / "en_US". Keep only the primary
+    # language subtag (ISO 639, 2-3 letters) and drop any region/script suffix.
+    primary = re.split(r'[-_]', v, maxsplit=1)[0]
+    if not re.match(r'^[a-z]{2,3}$', primary):
+        raise ValueError("language must be a valid ISO 639 language code (e.g. 'en', 'tr')")
+    return primary
 
 
 def _to_utc_iso(value: Optional[datetime]) -> Optional[str]:

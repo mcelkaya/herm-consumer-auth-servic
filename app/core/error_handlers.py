@@ -1,6 +1,7 @@
 import uuid
 import logging
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -17,7 +18,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": exc.errors()},
+            # jsonable_encoder is required: Pydantic v2's exc.errors() embeds the
+            # raw exception object under ctx.error, which json.dumps cannot
+            # serialize. Without this the handler raises TypeError, producing a
+            # header-less 500 (no CORS headers) that the browser misreports as a
+            # CORS error.
+            content={"detail": jsonable_encoder(exc.errors())},
         )
 
     @app.exception_handler(StarletteHTTPException)
