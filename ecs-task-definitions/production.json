@@ -123,6 +123,10 @@
         {
           "name": "FACEBOOK_APP_SECRET",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-facebook_app_secret"
+        },
+        {
+          "name": "ALERT_SLACK_WEBHOOK",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_slack_auth_alerts_webhook"
         }
       ],
       "ulimits": [],

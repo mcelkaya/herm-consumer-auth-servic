@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = "INFO"
 
+    # Slack alert notifications (Incoming Webhook). Blank = no-op (dev safe).
+    # Receives ops/system alerts (critical + warning) via send_alert. Injected
+    # as an SSM secret (prod_slack_auth_alerts_webhook) in production.
+    ALERT_SLACK_WEBHOOK: str = ""
+
     NOTIFICATION_QUEUE_URL: str = "INFO"
 
     # Consumer-service internal API (referral signup linkage)

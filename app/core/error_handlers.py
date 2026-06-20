@@ -6,6 +6,8 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.utils.alerting import send_alert
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,6 +74,18 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "method": request.method,
                 "client_ip": request.client.host if request.client else None,
                 "user_agent": request.headers.get("user-agent"),
+            },
+        )
+        # Forward unhandled 500s to the ops Slack channel. send_alert never
+        # raises and no-ops when ALERT_SLACK_WEBHOOK is unset (dev/test).
+        await send_alert(
+            level="critical",
+            title="Unhandled exception",
+            message=str(exc),
+            details={
+                "error_id": error_id,
+                "path": request.url.path,
+                "method": request.method,
             },
         )
         return JSONResponse(
