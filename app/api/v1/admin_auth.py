@@ -1,12 +1,13 @@
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_blocklist
 from app.core.config import settings
 from app.middleware.rate_limit import rate_limit_admin_login
 from app.core.audit_log import audit
+from app.core.roles import is_reporting_only
 from app.core.security import security_service
 from app.db.session import get_db
 from app.models.admin_user import AdminUser
@@ -17,6 +18,7 @@ from app.schemas.admin import (
     AdminTokenResponse,
     AdminUserResponse,
     RegistrationStatsResponse,
+    UtmBreakdownResponse,
 )
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_token_service import AdminTokenService, create_admin_access_token
@@ -129,8 +131,34 @@ async def get_current_admin(
     return admin_user
 
 
+def require_full_admin(
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> AdminUser:
+    """Authorize a full back-office admin, rejecting reporting-only roles.
+
+    Use this (instead of ``get_current_admin``) on every management or
+    privileged admin endpoint. Reporting-only roles such as ``marketing`` are
+    authenticated but limited to the read-only stats endpoints, so they must
+    receive 403 here even though their token is valid.
+    """
+    if is_reporting_only(current_admin.role):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This admin role is not permitted to access this resource",
+        )
+    return current_admin
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
+#
+# Access policy:
+#   - login / refresh / logout / me  -> any authenticated admin (incl.
+#     reporting-only roles; the dashboard needs these to sign in and load).
+#   - stats/*                        -> any authenticated admin; these are the
+#     read-only reporting endpoints that reporting-only roles (marketing) use.
+#   - any future management endpoint -> MUST depend on `require_full_admin` so
+#     reporting-only roles are rejected with 403.
 # ---------------------------------------------------------------------------
 
 @router.post("/login", response_model=AdminTokenResponse)
@@ -296,3 +324,28 @@ async def get_registration_stats(
     repo = UserRepository(db)
     counts = await repo.get_registration_counts()
     return RegistrationStatsResponse(**counts)
+
+
+@router.get("/stats/registrations/utm", response_model=UtmBreakdownResponse)
+async def get_registration_utm_breakdown(
+    days: int = Query(
+        30,
+        ge=1,
+        le=365,
+        description="Rolling window in days to aggregate signups over (1-365).",
+    ),
+    _admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> UtmBreakdownResponse:
+    """
+    UTM attribution breakdown of signups over a rolling window.
+
+    Returns, for each UTM dimension (source / medium / campaign / term /
+    content), the top values and their signup counts so admins can see where
+    registrations are coming from. Missing/empty values are grouped under
+    "(none)" (direct / unattributed). ``total`` is the signup count over the
+    same window.
+    """
+    repo = UserRepository(db)
+    breakdown = await repo.get_utm_breakdown(days)
+    return UtmBreakdownResponse(**breakdown)

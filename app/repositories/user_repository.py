@@ -1,9 +1,16 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
-from sqlalchemy import func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
+
+
+# Bucket label for signups with a missing/empty UTM value (direct / unattributed).
+UTM_NONE_BUCKET = "(none)"
+# Cap rows returned per UTM dimension so a high-cardinality dimension can't
+# return an unbounded result set.
+UTM_TOP_N = 25
 
 
 class UserRepository:
@@ -25,6 +32,48 @@ class UserRepository:
         )
         row = result.one()
         return {"daily": row.daily, "weekly": row.weekly, "monthly": row.monthly, "total": row.total}
+
+    async def get_utm_breakdown(self, days: int) -> dict:
+        """Signup counts grouped by each UTM dimension over a rolling window.
+
+        For every UTM dimension the result is a list of ``{value, count}`` rows
+        ordered by count (descending) and limited to the top ``UTM_TOP_N``
+        values. NULL or empty values are collapsed into a single
+        ``UTM_NONE_BUCKET`` ("direct" / unattributed) row so they stay visible
+        rather than silently dropping out of the totals.
+        """
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+
+        dimensions = {
+            "utm_source": User.utm_source,
+            "utm_medium": User.utm_medium,
+            "utm_campaign": User.utm_campaign,
+            "utm_term": User.utm_term,
+            "utm_content": User.utm_content,
+        }
+
+        breakdown: dict = {"window_days": days}
+        for name, column in dimensions.items():
+            # NULL or whitespace-only -> the "(none)" bucket.
+            bucket = func.coalesce(
+                func.nullif(func.trim(column), ""), UTM_NONE_BUCKET
+            ).label("value")
+            result = await self.db.execute(
+                select(bucket, func.count().label("count"))
+                .where(User.created_at >= since)
+                .group_by(bucket)
+                .order_by(desc("count"))
+                .limit(UTM_TOP_N)
+            )
+            breakdown[name] = [
+                {"value": r.value, "count": r.count} for r in result.all()
+            ]
+
+        total = await self.db.scalar(
+            select(func.count()).where(User.created_at >= since)
+        )
+        breakdown["total"] = total or 0
+        return breakdown
 
     async def create(
         self,
