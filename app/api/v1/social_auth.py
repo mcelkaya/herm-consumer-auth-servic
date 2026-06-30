@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import audit
 from app.core.config import settings
+from app.core.cookies import set_refresh_cookie
 from app.db.session import get_db
 from app.middleware.rate_limit import rate_limit_login
 from app.schemas.social import SocialAuthRequest, SocialProvider
@@ -82,14 +83,7 @@ async def social_auth(
             },
         )
 
-    response.set_cookie(
-        key="refresh_token",
-        value=result.tokens.refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-    )
+    set_refresh_cookie(response, result.tokens.refresh_token)
 
     audit(
         "social_signup_success" if result.created else "social_login_success",

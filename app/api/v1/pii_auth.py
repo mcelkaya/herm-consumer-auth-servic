@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_blocklist, get_current_user
 from app.core.config import settings
+from app.core.cookies import set_refresh_cookie, clear_refresh_cookie
 from app.core.security import security_service
 from app.core.audit_log import audit
 from app.db.session import get_db
@@ -111,14 +112,7 @@ async def refresh_access_token(
             ip_address=ip_address
         )
 
-        response.set_cookie(
-            key="refresh_token",
-            value=new_refresh_token.token,
-            httponly=True,
-            secure=True,
-            samesite="none",
-            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-        )
+        set_refresh_cookie(response, new_refresh_token.token)
 
         return TokenResponse(
             access_token=access_token,
@@ -155,7 +149,7 @@ async def logout(
 
     ip_address = request.client.host if request.client else None
     audit("logout", ip=ip_address, user_id=str(current_user.id))
-    response.delete_cookie(key="refresh_token")
+    clear_refresh_cookie(response)
     return {"message": "Logged out successfully"}
 
 
@@ -177,7 +171,7 @@ async def logout_all_devices(
 
     ip_all = request.client.host if request.client else None
     audit("logout_all_devices", ip=ip_all, user_id=str(current_user.id))
-    response.delete_cookie(key="refresh_token")
+    clear_refresh_cookie(response)
     return {"message": "Logged out from all devices"}
 
 

@@ -29,6 +29,19 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     REFRESH_TOKEN_ROTATION_ENABLED: bool = True
 
+    # Refresh-token cookie attributes.
+    # With same-origin serving (the app and /herm-auth/* share an origin via the
+    # frontend proxy) the refresh_token cookie is FIRST-PARTY, so "lax" is the
+    # correct and most robust default — it survives full reloads on every
+    # browser, including iOS Safari and in-app webviews, which block/partition
+    # SameSite=None third-party cookies. Use "none" only for a genuinely
+    # cross-site deployment (which also requires COOKIE_SECURE=True).
+    # COOKIE_DOMAIN is normally left unset (host-only); set it to ".herm.io"
+    # only if the cookie must be shared across subdomains.
+    COOKIE_SAMESITE: str = "lax"
+    COOKIE_SECURE: bool = True
+    COOKIE_DOMAIN: Optional[str] = None
+
     # Password Reset
     FRONTEND_URL: str = "http://localhost:3000"
     PASSWORD_RESET_TOKEN_EXPIRE_HOURS: int = 24

@@ -13,6 +13,7 @@ from app.services.forgot_password_service import ForgotPasswordService
 from app.services.reset_password_service import ResetPasswordService
 from app.services.email_verification_service import EmailVerificationService
 from app.core.config import settings
+from app.core.cookies import set_refresh_cookie
 from app.core.audit_log import audit
 from app.middleware.rate_limit import (
     rate_limit_forgot_password,
@@ -45,14 +46,7 @@ async def signup(
         background_tasks=background_tasks
     )
 
-    response.set_cookie(
-        key="refresh_token",
-        value=token_response.refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-    )
+    set_refresh_cookie(response, token_response.refresh_token)
 
     return token_response
 
@@ -75,14 +69,7 @@ async def login(
         ip_address=ip_address
     )
 
-    response.set_cookie(
-        key="refresh_token",
-        value=token_response.refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-    )
+    set_refresh_cookie(response, token_response.refresh_token)
 
     audit("login_success", ip=ip_address, email=login_data.email)
     response.headers["Content-Type"] = "application/json"
@@ -171,14 +158,7 @@ async def verify_email(
         ip_address=ip_address
     )
 
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token_obj.token,
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-    )
+    set_refresh_cookie(response, refresh_token_obj.token)
 
     return VerifyEmailResponse(
         kind="primary",
