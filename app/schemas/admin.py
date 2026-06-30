@@ -54,3 +54,31 @@ class RegistrationStatsResponse(BaseModel):
     weekly: int  # last 7 days
     monthly: int  # last 30 days
     total: int
+
+
+class UtmDimensionCount(BaseModel):
+    """One value of a UTM dimension and how many signups carried it.
+
+    ``value`` is "(none)" for signups with a missing/empty value on this
+    dimension (direct / unattributed traffic).
+    """
+
+    value: str
+    count: int
+
+
+class UtmBreakdownResponse(BaseModel):
+    """Signup counts grouped by each UTM dimension over a rolling window.
+
+    Each dimension lists its top values (descending by count). ``total`` is the
+    number of signups in the same window, so the share of attributed vs.
+    "(none)" traffic can be computed per dimension.
+    """
+
+    window_days: int
+    total: int
+    utm_source: list[UtmDimensionCount]
+    utm_medium: list[UtmDimensionCount]
+    utm_campaign: list[UtmDimensionCount]
+    utm_term: list[UtmDimensionCount]
+    utm_content: list[UtmDimensionCount]
