@@ -36,6 +36,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.models.user_email_alias import UserEmailAlias
+from app.repositories.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -109,3 +110,24 @@ async def lookup_user_by_email(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="No user owns this email",
     )
+
+
+class DailyMetricsResponse(BaseModel):
+    users_24h: int
+
+
+@router.get(
+    "/stats/daily-metrics",
+    response_model=DailyMetricsResponse,
+    dependencies=[Depends(verify_internal_api_key)],
+)
+async def daily_metrics(
+    db: AsyncSession = Depends(get_db),
+) -> DailyMetricsResponse:
+    """Users registered in the last 24h — for the daily Slack metrics digest.
+
+    Reuses ``UserRepository.get_registration_counts()`` (rolling windows) and
+    surfaces only the 24h bucket.
+    """
+    counts = await UserRepository(db).get_registration_counts()
+    return DailyMetricsResponse(users_24h=counts["daily"])
