@@ -58,5 +58,12 @@ class User(Base):
         cascade="all, delete-orphan"
     )
 
+    # Relationship with email OTP codes
+    email_otp_codes = relationship(
+        "EmailOtpCode",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
     def __repr__(self):
         return f"<User {self.email}>"

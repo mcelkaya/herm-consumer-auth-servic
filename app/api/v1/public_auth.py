@@ -1,17 +1,22 @@
 from fastapi import APIRouter, Depends, status, Request, Response, BackgroundTasks
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.user import (
     UserSignup, UserLogin, TokenResponse,
     ForgotPasswordRequest, ForgotPasswordResponse,
     ResetPasswordRequest, ResetPasswordResponse,
     VerifyEmailRequest, VerifyEmailResponse,
+    SendOtpRequest, SendOtpResponse,
+    VerifyOtpRequest, VerifyOtpResponse,
 )
 from app.services.user_service import UserService
 from app.services.token_service import TokenService, create_access_token
 from app.services.forgot_password_service import ForgotPasswordService
 from app.services.reset_password_service import ResetPasswordService
 from app.services.email_verification_service import EmailVerificationService
+from app.services.email_otp_service import EmailOtpService
 from app.core.config import settings
 from app.core.cookies import set_refresh_cookie
 from app.core.audit_log import audit
@@ -21,6 +26,8 @@ from app.middleware.rate_limit import (
     rate_limit_login,
     rate_limit_signup,
     rate_limit_verify_email,
+    rate_limit_send_otp,
+    rate_limit_verify_otp,
 )
 
 router = APIRouter(prefix="/public/auth", tags=["Authentication"])
@@ -165,4 +172,54 @@ async def verify_email(
         access_token=access_token,
         refresh_token=refresh_token_obj.token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
+
+
+@router.post("/send-otp", response_model=SendOtpResponse, status_code=status.HTTP_200_OK)
+async def send_otp(
+    request_data: SendOtpRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_send_otp),
+) -> SendOtpResponse:
+    ip_address = request.client.host if request.client else None
+    language = request_data.language or "en"
+
+    # Don't reveal whether the account exists or is already verified
+    # (same email-enumeration protection as forgot-password).
+    result = await db.execute(select(User).where(User.email == request_data.email))
+    user = result.scalar_one_or_none()
+
+    if user and not user.is_verified:
+        service = EmailOtpService(db)
+        await service.send_otp_email(user=user, language=language, ip_address=ip_address)
+
+    return SendOtpResponse()
+
+
+@router.post("/verify-otp", response_model=VerifyOtpResponse, status_code=status.HTTP_200_OK)
+async def verify_otp(
+    body: VerifyOtpRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_verify_otp),
+) -> VerifyOtpResponse:
+    ip_address = request.client.host if request.client else None
+    device_info = request.headers.get("User-Agent")
+
+    service = EmailOtpService(db)
+    result = await service.verify_otp_code(
+        email=body.email,
+        code=body.code,
+        ip_address=ip_address,
+        device_info=device_info,
+    )
+
+    set_refresh_cookie(response, result.refresh_token)
+
+    return VerifyOtpResponse(
+        access_token=result.access_token,
+        refresh_token=result.refresh_token,
+        expires_in=result.expires_in,
     )

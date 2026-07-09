@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
 from app.services.reset_password_service import ResetPasswordService
+from app.services.email_otp_service import EmailOtpService
 
 
 async def cleanup_expired_tokens_task():
@@ -46,10 +47,16 @@ async def cleanup_expired_tokens_task():
             reset_count = await reset_service.cleanup_expired_tokens()
             print(f"[{datetime.utcnow()}] Cleaned up {reset_count} expired password reset tokens")
 
+            # Cleanup email OTP codes
+            otp_service = EmailOtpService(session)
+            otp_count = await otp_service.cleanup_expired_codes()
+            print(f"[{datetime.utcnow()}] Cleaned up {otp_count} expired email OTP codes")
+
             return {
                 "refresh_tokens": refresh_count,
                 "password_reset_tokens": reset_count,
-                "total": refresh_count + reset_count
+                "email_otp_codes": otp_count,
+                "total": refresh_count + reset_count + otp_count
             }
         except Exception as e:
             print(f"[{datetime.utcnow()}] Error cleaning up expired tokens: {e}")
@@ -65,7 +72,8 @@ async def run_cleanup():
     """
     result = await cleanup_expired_tokens_task()
     print(f"Cleanup completed. Removed {result['total']} expired tokens "
-          f"({result['refresh_tokens']} refresh, {result['password_reset_tokens']} password reset).")
+          f"({result['refresh_tokens']} refresh, {result['password_reset_tokens']} password reset, "
+          f"{result['email_otp_codes']} email OTP codes).")
 
 
 if __name__ == "__main__":

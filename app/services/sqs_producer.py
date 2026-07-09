@@ -184,6 +184,45 @@ class NotificationProducer:
         )
         return self._send_message(message)
 
+    def send_email_verification_otp(
+        self,
+        email: str,
+        user_name: str,
+        code: str,
+        expiry_minutes: int,
+        user_id: UUID,
+        language: str = "en",
+        correlation_id: str = None
+    ) -> str:
+        """Send a 6-digit OTP email verification code notification.
+
+        NOTE: the plaintext code is sent here (in the SQS message/email body)
+        — only the database row is hashed. The downstream notification
+        service needs a matching "email_verification_otp" template.
+        """
+        message = NotificationMessage(
+            channel=Channel.EMAIL,
+            template_slug="email_verification_otp",
+            recipient=RecipientSchema(
+                email=email,
+                user_id=str(user_id),
+                name=user_name
+            ),
+            language=language,
+            variables={
+                "code": code,
+                "user_name": user_name,
+                "expiry_minutes": str(expiry_minutes)
+            },
+            priority=Priority.HIGH,
+            metadata={
+                "source_service": "auth-service",
+                "correlation_id": correlation_id or str(uuid4()),
+                "user_id": str(user_id)
+            }
+        )
+        return self._send_message(message)
+
     def send_alias_email_verification(
         self,
         email: str,

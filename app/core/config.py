@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     DATABASE_SCHEMA: str = "public"
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 10
+    TEST_DATABASE_URL: str = ""
     
     # JWT
     SECRET_KEY: str

@@ -212,6 +212,47 @@ class ResendVerificationResponse(BaseModel):
     message: str = "If an account exists with this email, a verification link has been sent."
 
 
+# Email OTP Verification Schemas
+class SendOtpRequest(BaseModel):
+    """Schema for requesting a 6-digit email verification OTP"""
+    email: EmailStr
+    language: Optional[str] = Field(default="en", description="User's preferred language code")
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def validate_language(cls, v):
+        return _validate_language(v)
+
+
+class VerifyOtpRequest(BaseModel):
+    """Schema for verifying a 6-digit email verification OTP"""
+    email: EmailStr
+    code: str = Field(
+        ...,
+        pattern=r"^\d{6}$",
+        description="6-digit verification code sent to the user's email",
+    )
+
+
+class VerifyOtpResponse(BaseModel):
+    """Response shape for /public/auth/verify-otp.
+
+    Mirrors VerifyEmailResponse: verifying via OTP logs the user in, so
+    access_token / refresh_token / expires_in are always populated on success.
+    """
+    message_key: str = "auth.verifyOtp.success"
+    message: str = "Email has been verified successfully."
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
+
+
+class SendOtpResponse(BaseModel):
+    """Schema for send-otp response"""
+    message_key: str = "auth.sendOtp.codeSent"
+    message: str = "If an account exists with this email, a verification code has been sent."
+
+
 class LanguagePreference(BaseModel):
     """Optional request body carrying just the caller's preferred language.
 

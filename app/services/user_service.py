@@ -9,6 +9,7 @@ from app.schemas.user import UserSignup, UserLogin, TokenResponse
 from app.models.user import User
 from app.services.token_service import TokenService, create_access_token
 from app.services.email_verification_service import EmailVerificationService
+from app.services.email_otp_service import EmailOtpService
 from app.core.config import settings
 import logging
 
@@ -23,6 +24,7 @@ class UserService:
         self.user_repo = UserRepository(db)
         self.token_service = TokenService(db)
         self.verification_service = EmailVerificationService(db)
+        self.otp_service = EmailOtpService(db)
 
     async def signup(
         self,
@@ -52,6 +54,10 @@ class UserService:
             utm_term=signup_data.utm_term,
             utm_content=signup_data.utm_content,
         )
+
+        # Create an OTP code so the client can immediately prompt for OTP
+        # verification without a separate /send-otp call.
+        await self.otp_service.create_otp_code(user.id, ip_address)
 
         # Get language from signup data (default to 'en' if not provided)
         language = signup_data.language or "en"

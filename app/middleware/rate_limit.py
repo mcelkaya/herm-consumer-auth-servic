@@ -68,6 +68,19 @@ async def rate_limit_verify_email(request: Request):
     await _check_rate_limit(request, "verify_email", max_requests=3, window_seconds=900)
 
 
+async def rate_limit_send_otp(request: Request):
+    await _check_rate_limit(request, "send_otp", max_requests=3, window_seconds=900)
+
+
+async def rate_limit_verify_otp(request: Request):
+    # Distinct from rate_limit_send_otp: a 6-digit code needs room for a
+    # handful of honest mistyped-code retries, so this allows more attempts
+    # per IP than sending codes does. attempt_count on EmailOtpCode handles
+    # per-code brute-force lockout (5 wrong guesses); this IP-based limiter
+    # is a second, independent layer against spraying guesses across codes.
+    await _check_rate_limit(request, "verify_otp", max_requests=10, window_seconds=900)
+
+
 # ---------------------------------------------------------------------------
 # Email alias limits
 #
