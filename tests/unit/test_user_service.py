@@ -120,3 +120,31 @@ async def test_user_signup_with_referral_code_triggers_referral_linking(db_sessi
 
     mock_link.assert_awaited_once()
 
+
+@pytest.mark.asyncio
+async def test_user_signup_sends_otp_email_not_link_email(db_session):
+    """Regression: signup must email the OTP code, not the legacy verification link.
+
+    Bug: signup called EmailOtpService.create_otp_code() (which only writes a
+    DB row and discards the plaintext code) instead of send_otp_email(), while
+    still sending the old link-based verification email. Users received a
+    "Verify Your Email" link instead of an OTP code.
+    """
+    user_service = UserService(db_session)
+    signup_data = UserSignup(
+        email="otp-signup@example.com",
+        password="testpassword123",
+    )
+
+    with patch(
+        "app.services.user_service.EmailOtpService.send_otp_email",
+        new_callable=AsyncMock,
+    ) as mock_send_otp, patch(
+        "app.services.user_service.EmailVerificationService.send_verification_email",
+        new_callable=AsyncMock,
+    ) as mock_send_link:
+        await user_service.signup(signup_data)
+
+    mock_send_otp.assert_awaited_once()
+    mock_send_link.assert_not_awaited()
+

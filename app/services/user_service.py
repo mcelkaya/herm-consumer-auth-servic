@@ -23,7 +23,6 @@ class UserService:
         self.db = db
         self.user_repo = UserRepository(db)
         self.token_service = TokenService(db)
-        self.verification_service = EmailVerificationService(db)
         self.otp_service = EmailOtpService(db)
 
     async def signup(
@@ -55,10 +54,6 @@ class UserService:
             utm_content=signup_data.utm_content,
         )
 
-        # Create an OTP code so the client can immediately prompt for OTP
-        # verification without a separate /send-otp call.
-        await self.otp_service.create_otp_code(user.id, ip_address)
-
         # Get language from signup data (default to 'en' if not provided)
         language = signup_data.language or "en"
 
@@ -70,25 +65,25 @@ class UserService:
                 referral_code=signup_data.referral_code,
             )
 
-        # Send verification email asynchronously
+        # Send OTP verification email asynchronously
         if background_tasks:
             background_tasks.add_task(
-                self.verification_service.send_verification_email,
+                self.otp_service.send_otp_email,
                 user=user,
                 language=language,  # Pass language to email service
                 ip_address=ip_address
             )
-            logger.info(f"Verification email queued for user_id={user.id} (language: {language})")
+            logger.info(f"OTP email queued for user_id={user.id} (language: {language})")
         else:
             # Fallback to synchronous if background_tasks not available
             try:
-                await self.verification_service.send_verification_email(
+                await self.otp_service.send_otp_email(
                     user=user,
                     language=language,  # Pass language to email service
                     ip_address=ip_address
                 )
             except Exception as e:
-                logger.error(f"Failed to send verification email for user_id={user.id}: {str(e)}")
+                logger.error(f"Failed to send OTP email for user_id={user.id}: {str(e)}")
 
         # Generate tokens (is_verified will be false initially)
         access_token = create_access_token(user)
