@@ -65,7 +65,11 @@ async def rate_limit_signup(request: Request):
 
 
 async def rate_limit_verify_email(request: Request):
-    await _check_rate_limit(request, "verify_email", max_requests=3, window_seconds=900)
+    # verify_email is idempotent, so the limit only needs to stop abuse, not
+    # honest duplicates: clients double/triple-fire (e.g. React StrictMode),
+    # so 3 per window rate-limited legitimate single verifications. Matches
+    # rate_limit_verify_otp's allowance.
+    await _check_rate_limit(request, "verify_email", max_requests=10, window_seconds=900)
 
 
 async def rate_limit_send_otp(request: Request):
