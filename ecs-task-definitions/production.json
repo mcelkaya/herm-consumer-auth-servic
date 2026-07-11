@@ -94,6 +94,14 @@
         {
           "name": "FACEBOOK_EMAIL_VERIFIED_DEFAULT",
           "value": "true"
+        },
+        {
+          "name": "OIDC_PROVIDER_ENABLED",
+          "value": "false"
+        },
+        {
+          "name": "OIDC_ISSUER",
+          "value": "https://api.herm.io/herm-auth"
         }
       ],
       "environmentFiles": [],
@@ -131,6 +139,10 @@
         {
           "name": "ALERT_SLACK_WEBHOOK",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_slack_auth_alerts_webhook"
+        },
+        {
+          "name": "OIDC_SIGNING_KEY_ARN",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_oidc_signing_key_arn"
         }
       ],
       "ulimits": [],

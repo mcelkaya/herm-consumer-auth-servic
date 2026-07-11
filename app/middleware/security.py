@@ -53,7 +53,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-        response.headers["Cache-Control"] = "no-store"
+
+        # OIDC discovery/JWKS are public, cacheable documents — partners and CDNs
+        # cache the JWKS (max-age) to verify tokens without hammering us. Preserve
+        # the handler's Cache-Control there; force no-store everywhere else.
+        if not request.url.path.startswith("/herm-auth/.well-known/"):
+            response.headers["Cache-Control"] = "no-store"
 
         content_type = response.headers.get("content-type", "")
         if response.status_code >= 400 and "application/json" not in content_type:

@@ -148,6 +148,28 @@ class Settings(BaseSettings):
     def APPLE_CLIENT_IDS(self) -> List[str]:
         return [c.strip() for c in self.APPLE_CLIENT_IDS_STR.split(",") if c.strip()]
 
+    # =========================================================================
+    # Login with Herm — OIDC provider (partner-facing federated login)
+    #
+    # The whole provider surface is gated behind OIDC_PROVIDER_ENABLED. When
+    # False (the default, and the initial production value), the discovery/JWKS/
+    # flow endpoints all return 404 — deploying this code is a no-op until the
+    # flag is deliberately flipped.
+    # =========================================================================
+    OIDC_PROVIDER_ENABLED: bool = False
+
+    # Public issuer identifier. MUST equal the base URL partners use for
+    # discovery ({issuer}/.well-known/openid-configuration). Prod: the api host.
+    OIDC_ISSUER: str = "https://api.herm.lvh.me/herm-auth"
+
+    # KMS asymmetric (RSA_2048, SIGN_VERIFY) key ARN/alias used to RS256-sign
+    # partner id_tokens/access_tokens. Private material stays in KMS. Injected
+    # from SSM (/${env}_oidc_signing_key_arn) in production.
+    OIDC_SIGNING_KEY_ARN: Optional[str] = None
+
+    # In-process cache TTL (seconds) for the resolved public JWKS.
+    OIDC_SIGNING_KEY_CACHE_TTL_SECONDS: int = 300
+
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True

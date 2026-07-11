@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.api.v1 import public_auth, pii_auth, admin_auth, internal, social_auth, social_link
+from app.api import well_known
 from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizerMiddleware
 from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
@@ -95,6 +96,10 @@ app.include_router(internal.router, prefix="/herm-auth/v1")
 #   social_link: GET/POST/DELETE /herm-auth/v1/pii/auth/social/... (authenticated)
 app.include_router(social_auth.router, prefix="/herm-auth/v1")
 app.include_router(social_link.router, prefix="/herm-auth/v1")
+
+# Login with Herm — OIDC discovery/JWKS at the issuer root (/herm-auth/.well-known/*).
+# Routes are always mounted but each returns 404 unless OIDC_PROVIDER_ENABLED.
+app.include_router(well_known.router, prefix="/herm-auth")
 
 
 register_exception_handlers(app)
