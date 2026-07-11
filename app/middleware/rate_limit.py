@@ -40,6 +40,28 @@ async def _check_rate_limit(
         )
 
 
+async def enforce_rate_limit(request: Request, key: str, max_requests: int, window_seconds: int) -> None:
+    """Fixed-window limiter keyed by an EXPLICIT sub-key (e.g. client_id / jti),
+    not the client IP — used by the OIDC flow endpoints."""
+    redis: aioredis.Redis = request.app.state.redis
+    rkey = f"rate:{key}"
+    count = await redis.incr(rkey)
+    if count == 1:
+        await redis.expire(rkey, window_seconds)
+    if count > max_requests:
+        ttl = max(await redis.ttl(rkey), 0)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded. Try again in {ttl} seconds.",
+            headers={"Retry-After": str(ttl)},
+        )
+
+
+async def rate_limit_oidc_authorize(request: Request):
+    # Unauthenticated GET; per-IP + WAF at the edge.
+    await _check_rate_limit(request, "oidc_authorize", max_requests=60, window_seconds=60)
+
+
 async def rate_limit_login(request: Request):
     await _check_rate_limit(request, "login", max_requests=5, window_seconds=300)
 

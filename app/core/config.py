@@ -180,6 +180,37 @@ class Settings(BaseSettings):
     # In-process cache TTL (seconds) for the resolved public JWKS.
     OIDC_SIGNING_KEY_CACHE_TTL_SECONDS: int = 300
 
+    # Gates the OAuth *flow* endpoints (authorize/finish/token/userinfo/revoke)
+    # independently of discovery/JWKS, so a half-built flow is never live even
+    # while OIDC_PROVIDER_ENABLED is on.
+    OIDC_FLOWS_ENABLED: bool = False
+    # Refresh-token (offline_access) grant — off in v1.
+    OIDC_OFFLINE_ACCESS_ENABLED: bool = False
+
+    # HMAC key for pairwise subject identifiers (PPID). Dedicated (not SECRET_KEY)
+    # so rotating other secrets never changes partners' `sub`. SSM SecureString.
+    OIDC_PPID_SECRET: Optional[str] = None
+    # Key for encrypting short-lived OIDC state stored in Redis (req/verifier/code).
+    # Any high-entropy string; a Fernet key is derived from it. SSM SecureString.
+    OIDC_STATE_ENC_KEY: Optional[str] = None
+
+    # Token / state TTLs (seconds).
+    OIDC_ID_TOKEN_TTL_SECONDS: int = 300
+    OIDC_ACCESS_TOKEN_TTL_SECONDS: int = 900
+    OIDC_REQUEST_TTL_SECONDS: int = 600
+    OIDC_REQUEST_PENDING_TTL_SECONDS: int = 1800
+    OIDC_CODE_TTL_SECONDS: int = 60
+    OIDC_VERIFIER_TTL_SECONDS: int = 60
+    OIDC_CODE_USED_TTL_SECONDS: int = 600
+
+    # Consumer-app (hermConsumer) pages the authorize flow hands off to. The
+    # consent page reads request_id from the URL fragment; the error page shows
+    # a terminal message (never redirects to a client-supplied URL).
+    OIDC_CONSENT_URL: str = "https://app.herm.lvh.me/connect/consent"
+    OIDC_ERROR_URL: str = "https://app.herm.lvh.me/connect/error"
+    # Binding cookie (ties /authorize -> /authorize/finish to one browser).
+    OIDC_BINDING_COOKIE_TTL_SECONDS: int = 900
+
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True

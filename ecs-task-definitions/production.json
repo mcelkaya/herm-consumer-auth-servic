@@ -102,6 +102,18 @@
         {
           "name": "OIDC_ISSUER",
           "value": "https://api.herm.io/herm-auth"
+        },
+        {
+          "name": "OIDC_FLOWS_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OIDC_CONSENT_URL",
+          "value": "https://app.herm.io/connect/consent"
+        },
+        {
+          "name": "OIDC_ERROR_URL",
+          "value": "https://app.herm.io/connect/error"
         }
       ],
       "environmentFiles": [],
@@ -147,6 +159,14 @@
         {
           "name": "WIZARD_AUTH_KEY",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_wizard_auth_key"
+        },
+        {
+          "name": "OIDC_PPID_SECRET",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_oidc_ppid_secret"
+        },
+        {
+          "name": "OIDC_STATE_ENC_KEY",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_oidc_state_enc_key"
         }
       ],
       "ulimits": [],

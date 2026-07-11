@@ -5,6 +5,8 @@ from app.models.email_verification_token import EmailVerificationToken
 from app.models.user_email_alias import UserEmailAlias
 from app.models.oauth_signing_key import OAuthSigningKey
 from app.models.oauth_client import OAuthClient
+from app.models.oauth_consent import OAuthConsent
+from app.models.oauth_refresh_token import OAuthRefreshToken
 
 __all__ = [
     "User",
@@ -14,4 +16,6 @@ __all__ = [
     "UserEmailAlias",
     "OAuthSigningKey",
     "OAuthClient",
+    "OAuthConsent",
+    "OAuthRefreshToken",
 ]
