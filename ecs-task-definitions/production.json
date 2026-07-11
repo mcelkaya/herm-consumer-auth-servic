@@ -148,7 +148,7 @@
   ],
   "family": "prod-auth",
   "executionRoleArn": "arn:aws:iam::373352901774:role/ecsTaskExecutionRole",
-  "taskRoleArn": "arn:aws:iam::373352901774:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::373352901774:role/hermAuthTaskRole",
   "networkMode": "awsvpc",
   "volumes": [],
   "placementConstraints": [],
