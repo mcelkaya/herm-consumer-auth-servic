@@ -143,6 +143,10 @@
         {
           "name": "OIDC_SIGNING_KEY_ARN",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_oidc_signing_key_arn"
+        },
+        {
+          "name": "WIZARD_AUTH_KEY",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_wizard_auth_key"
         }
       ],
       "ulimits": [],

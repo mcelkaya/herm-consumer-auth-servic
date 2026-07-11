@@ -97,6 +97,16 @@ class Settings(BaseSettings):
         description="Shared secret required on X-Internal-API-Key for /internal/* endpoints",
     )
 
+    # Dedicated credential for the wizard-service -> auth-service OAuth client
+    # registry channel (/internal/oauth/*). Deliberately SEPARATE from the
+    # 9-service shared INTERNAL_API_KEY so a leak elsewhere cannot mint partner
+    # "Login with Herm" clients. Fail-closed: if unset, the registry rejects all
+    # requests. Injected from SSM (${env}_wizard_auth_key) in production.
+    WIZARD_AUTH_KEY: Optional[str] = Field(
+        default=None,
+        description="Shared secret required on X-Internal-API-Key for /internal/oauth/* client registry endpoints",
+    )
+
     # =========================================================================
     # Social login (Google / Apple / Facebook)
     #
