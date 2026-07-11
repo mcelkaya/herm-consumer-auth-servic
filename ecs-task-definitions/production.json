@@ -97,7 +97,7 @@
         },
         {
           "name": "OIDC_PROVIDER_ENABLED",
-          "value": "false"
+          "value": "true"
         },
         {
           "name": "OIDC_ISSUER",
