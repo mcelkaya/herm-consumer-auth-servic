@@ -6,7 +6,7 @@ from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
-from app.api.v1 import public_auth, pii_auth, admin_auth, internal, social_auth, social_link, internal_oauth
+from app.api.v1 import public_auth, pii_auth, admin_auth, internal, social_auth, social_link, internal_oauth, pii_oauth
 from app.api import well_known, oidc
 from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizerMiddleware
 from app.db.session import AsyncSessionLocal
@@ -94,6 +94,9 @@ app.include_router(internal.router, prefix="/herm-auth/v1")
 # Login with Herm — partner OAuth client registry (wizard-service is the only
 # caller; guarded by the dedicated WIZARD_AUTH_KEY, blocked at the public ALB).
 app.include_router(internal_oauth.router, prefix="/herm-auth/v1")
+
+# Login with Herm — consumer "Connected Apps" (list/revoke own consents).
+app.include_router(pii_oauth.router, prefix="/herm-auth/v1")
 
 # Social login (Google / Apple / Facebook)
 #   social_auth: POST /herm-auth/v1/public/auth/social/{provider}  (public)

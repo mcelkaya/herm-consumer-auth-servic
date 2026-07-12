@@ -29,6 +29,14 @@ class OAuthClientRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_client_ids(self, client_ids: List[str]) -> List[OAuthClient]:
+        if not client_ids:
+            return []
+        result = await self.db.execute(
+            select(OAuthClient).where(OAuthClient.client_id.in_(client_ids))
+        )
+        return list(result.scalars().all())
+
     async def list_by_brand(self, brand_id: UUID) -> List[OAuthClient]:
         """All clients owned by a brand, newest first (management listing)."""
         result = await self.db.execute(
