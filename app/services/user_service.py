@@ -190,6 +190,16 @@ class UserService:
     async def get_user_by_id(self, user_id: UUID) -> Optional[User]:
         """Get user by ID"""
         return await self.user_repo.get_by_id(user_id)
+
+    async def delete_account(self, user: User) -> None:
+        """Hard-delete the user's account and every dependent row.
+
+        Refresh tokens, social links, email aliases, OTP/verification/reset
+        tokens, and Login-with-Herm consents all go with the row (ORM
+        cascades plus DB-level ON DELETE CASCADE), so no PII-bearing data
+        survives the account.
+        """
+        await self.user_repo.delete(user)
     
     async def get_current_user(self, token: str) -> User:
         """Get current authenticated user from token"""

@@ -88,6 +88,14 @@
           "value": "io.herm.mobile"
         },
         {
+          "name": "APPLE_TEAM_ID",
+          "value": "STNJ32J4MC"
+        },
+        {
+          "name": "APPLE_KEY_ID",
+          "value": "4687X3S96S"
+        },
+        {
           "name": "FACEBOOK_APP_ID",
           "value": "4319859038272210"
         },
@@ -147,6 +155,10 @@
         {
           "name": "FACEBOOK_APP_SECRET",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-facebook_app_secret"
+        },
+        {
+          "name": "APPLE_PRIVATE_KEY",
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_apple_signin_private_key"
         },
         {
           "name": "ALERT_SLACK_WEBHOOK",

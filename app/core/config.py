@@ -135,6 +135,24 @@ class Settings(BaseSettings):
         description="Comma-separated Apple client IDs (bundle id and/or services id)",
     )
 
+    # Apple server-side key (developer portal → Keys → Sign in with Apple).
+    # Needed only to revoke a user's Apple tokens when they delete their
+    # account (App Store guideline 5.1.1(v)); sign-in works without it. When
+    # unset, account deletion still succeeds and the revoke call is skipped
+    # with a warning.
+    APPLE_TEAM_ID: Optional[str] = Field(
+        default=None,
+        description="Apple Developer Team ID (used as iss in the client-secret JWT)",
+    )
+    APPLE_KEY_ID: Optional[str] = Field(
+        default=None,
+        description="Key ID of the Sign in with Apple .p8 key",
+    )
+    APPLE_PRIVATE_KEY: Optional[str] = Field(
+        default=None,
+        description="PEM contents of the .p8 key; literal \\n escapes allowed",
+    )
+
     # Facebook
     FACEBOOK_APP_ID: str = Field(
         default="TODO_FACEBOOK_APP_ID",

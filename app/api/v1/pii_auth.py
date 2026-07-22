@@ -13,6 +13,7 @@ from app.core.audit_log import audit
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import (
+    AccountDeleteRequest,
     EmailAliasAddRequest,
     EmailAliasResponse,
     EmailEntryResponse,
@@ -23,10 +24,12 @@ from app.schemas.user import (
     TokenResponse,
     UserResponse,
 )
+from app.services import apple_account_service
 from app.services.email_alias_service import EmailAliasService
 from app.services.email_verification_service import EmailVerificationService
 from app.services.token_blocklist_service import TokenBlocklistService
 from app.services.token_service import TokenService, create_access_token
+from app.services.user_service import UserService
 from app.middleware.rate_limit import (
     assert_alias_add_quota,
     assert_alias_resend_quota,
@@ -173,6 +176,66 @@ async def logout_all_devices(
     audit("logout_all_devices", ip=ip_all, user_id=str(current_user.id))
     clear_refresh_cookie(response)
     return {"message": "Logged out from all devices"}
+
+
+@router.delete("/me")
+async def delete_account(
+    request: Request,
+    response: Response,
+    body: Optional[AccountDeleteRequest] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    blocklist: TokenBlocklistService = Depends(get_blocklist),
+):
+    """Delete the caller's account (App Store guideline 5.1.1(v)).
+
+    Accounts with a password must re-confirm it; social-only accounts
+    delete on the session alone. When the app obtained a fresh Sign in with
+    Apple authorization code, pass it as `apple_authorization_code` so the
+    user's Apple tokens are revoked as Apple requires — revocation is
+    best-effort and never blocks the deletion.
+
+        400 auth.account.passwordRequired — account has a password but none
+            was provided
+        401 auth.account.invalidPassword  — password did not match
+    """
+    ip_address = request.client.host if request.client else None
+
+    if current_user.hashed_password:
+        if not body or not body.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error_key": "auth.account.passwordRequired"},
+            )
+        if not security_service.verify_password(body.password, current_user.hashed_password):
+            audit("account_delete_bad_password", ip=ip_address, user_id=str(current_user.id))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error_key": "auth.account.invalidPassword"},
+            )
+
+    apple_revoked = None
+    if body and body.apple_authorization_code:
+        apple_revoked = await apple_account_service.revoke_apple_tokens(
+            body.apple_authorization_code
+        )
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        payload = security_service.decode_token(auth_header[7:])
+        await _blocklist_access_token(payload, blocklist)
+
+    user_id = str(current_user.id)
+    await UserService(db).delete_account(current_user)
+
+    audit(
+        "account_deleted",
+        ip=ip_address,
+        user_id=user_id,
+        apple_tokens_revoked=apple_revoked,
+    )
+    clear_refresh_cookie(response)
+    return {"message": "Account deleted"}
 
 
 @router.post("/resend-verification")

@@ -388,3 +388,15 @@ class EmailListResponse(BaseModel):
 
 class ResendAliasVerificationResponse(BaseModel):
     message: str = "Verification email sent. Please check your inbox."
+
+class AccountDeleteRequest(BaseModel):
+    """Body for DELETE /pii/auth/me.
+
+    `password` is required (and checked) only when the account has one —
+    social-only accounts delete without it. `apple_authorization_code` is a
+    FRESH Sign in with Apple authorization code obtained by the app right
+    before deletion; when present, the user's Apple tokens are revoked as
+    App Review requires. Optional because not every account has Apple linked.
+    """
+    password: Optional[str] = None
+    apple_authorization_code: Optional[str] = None
