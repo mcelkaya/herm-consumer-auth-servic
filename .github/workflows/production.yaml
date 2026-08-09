@@ -171,3 +171,4 @@ jobs:
           service: prod-auth
           cluster: prod-ecs-cluster
           force-new-deployment: true
+          wait-for-service-stability: true

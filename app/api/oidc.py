@@ -36,6 +36,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.oidc_key_service import oidc_key_service
 from app.services.oidc_state_service import oidc_state_service, new_token
 from app.services.oidc_token_service import oidc_token_service, ACCESS_TOKEN_AUD
+from app.utils.alerting import send_alert
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,15 @@ async def authorize_finish(request: Request, verifier: str):
     # opened in the victim's browser).
     cookie = request.cookies.get(BINDING_COOKIE)
     if not cookie or not hmac.compare_digest(cookie, data.get("browser_binding", "")):
+        if cookie:
+            # A verifier presented with a WRONG binding cookie is suspicious
+            # (possible forced-login / verifier replay across browsers).
+            await send_alert(
+                "warning",
+                "OIDC finish binding mismatch",
+                "A finish verifier was presented with a non-matching browser binding.",
+                {"client_id": data.get("client_id")},
+            )
         return _error_page("access_denied")
 
     redirect_uri = data["redirect_uri"]
@@ -340,6 +350,12 @@ async def token(request: Request, db: AsyncSession = Depends(get_db)):
                 .values(revoked_at=func.now())
             )
             logger.warning("SECURITY oidc authorization code REPLAY detected client=%s", client_id)
+            await send_alert(
+                "warning",
+                "OIDC authorization code replay",
+                f"A consumed authorization code was presented again for client {client_id}.",
+                {"client_id": client_id},
+            )
         return _token_error("invalid_grant")
     await oidc_state_service.mark_code_used(request.app.state.redis, code)
 
