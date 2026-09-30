@@ -14,6 +14,12 @@
         }
       ],
       "essential": true,
+      "dependsOn": [
+        {
+          "containerName": "otel-collector",
+          "condition": "START"
+        }
+      ],
       "environment": [
         {
           "name": "ENVIRONMENT",
@@ -122,6 +128,30 @@
         {
           "name": "OIDC_ERROR_URL",
           "value": "https://app.herm.io/connect/error"
+        },
+        {
+          "name": "OTEL_SERVICE_NAME",
+          "value": "herm-consumer-auth-service"
+        },
+        {
+          "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+          "value": "http://localhost:4318"
+        },
+        {
+          "name": "OTEL_TRACES_SAMPLER",
+          "value": "parentbased_traceidratio"
+        },
+        {
+          "name": "OTEL_TRACES_SAMPLER_ARG",
+          "value": "0.2"
+        },
+        {
+          "name": "OTEL_METRICS_EXPORTER",
+          "value": "none"
+        },
+        {
+          "name": "OTEL_LOGS_EXPORTER",
+          "value": "none"
         }
       ],
       "environmentFiles": [],
@@ -189,6 +219,41 @@
           "awslogs-group": "prod/ecs/auth-logs",
           "awslogs-region": "eu-central-1",
           "awslogs-stream-prefix": "ecs"
+        },
+        "secretOptions": []
+      }
+    },
+    {
+      "name": "otel-collector",
+      "image": "public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0",
+      "cpu": 64,
+      "memory": 256,
+      "memoryReservation": 128,
+      "essential": false,
+      "environment": [
+        {
+          "name": "AOT_CONFIG_CONTENT",
+          "value": "extensions:\n  health_check:\n    endpoint: 127.0.0.1:13133\nreceivers:\n  otlp:\n    protocols:\n      http:\n        endpoint: 127.0.0.1:4318\nprocessors:\n  batch/traces:\n    timeout: 1s\n    send_batch_size: 50\nexporters:\n  awsxray:\n    region: eu-central-1\n    indexed_attributes: [herm.run_id, herm.llm.task, messaging.destination.name, gen_ai.request.model]\nservice:\n  extensions: [health_check]\n  pipelines:\n    traces:\n      receivers: [otlp]\n      processors: [batch/traces]\n      exporters: [awsxray]\n"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "/healthcheck"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "mountPoints": [],
+      "volumesFrom": [],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-create-group": "true",
+          "awslogs-group": "prod/ecs/auth-logs",
+          "awslogs-region": "eu-central-1",
+          "awslogs-stream-prefix": "otel"
         },
         "secretOptions": []
       }
