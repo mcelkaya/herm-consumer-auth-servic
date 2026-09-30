@@ -2,7 +2,7 @@
 
 - ``mask_email("someone@example.com")`` -> ``"s***@example.com"`` (domain kept for debugging)
 - ``redact(text)``   -> free text with emails masked and JWTs, bearer tokens,
-                        ``key=value`` secrets (token, code, verifier, request_id, ...) and IPv4s removed
+                        ``key=value`` secrets (token, code, verifier, request_id, ...) and IPv4/IPv6 removed
 - ``redact_field(key, value)`` -> value for a structured ``extra`` field; sensitive keys are dropped
 - ``validation_summary(errors)`` -> pydantic errors as ``loc:type`` only, never the echoed input
 """
@@ -27,6 +27,11 @@ _KV_RE = re.compile(
     rf"(?i)(?<![A-Za-z0-9_])({_SECRET_KEYS})([\"']?\s*[=:]\s*[\"']?)([^\s,&\"'}}\]]+)"
 )
 _IPV4_RE = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+# Full 8-group form, or a "::"-compressed form. Clock times (12:34:56) never match.
+_H = r"[0-9A-Fa-f]{1,4}"
+_IPV6_RE = re.compile(
+    rf"(?<![0-9A-Za-z:])(?:(?:{_H}:){{7}}{_H}|(?:{_H}:){{1,6}}:(?:{_H}:){{0,5}}{_H})(?![0-9A-Za-z:])"
+)
 
 _SENSITIVE_FIELD_PARTS = ("password", "secret", "token", "verifier", "nonce", "otp")
 _SENSITIVE_FIELDS = {"ip", "client_ip", "ip_address", "code", "state", "request_id", "authorization"}
@@ -48,6 +53,7 @@ def redact(text: Any) -> str:
     text = _JWT_RE.sub(REDACTED, text)
     text = _BEARER_RE.sub(f"Bearer {REDACTED}", text)
     text = _EMAIL_RE.sub(lambda m: f"{m.group(1)}***@{m.group(2)}", text)
+    text = _IPV6_RE.sub("[ip]", text)
     return _IPV4_RE.sub("[ip]", text)
 
 

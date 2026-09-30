@@ -21,6 +21,7 @@ import logging
 from typing import Any, Literal
 
 from app.core.config import settings
+from app.core.pii import redact, redact_field
 from app.utils.slack_notifier import slack_notifier
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,14 @@ async def send_alert(
         message: Full body text.
         details: Optional structured context (error_id, path, method, etc.) —
             surfaced in logs and in the Slack context line.
+
+    Callers pass exception text, which can embed emails / tokens: title,
+    message and detail values are redacted here so no caller can leak them to
+    Slack or the log.
     """
-    details = details or {}
+    title = redact(title)
+    message = redact(message)
+    details = {k: redact_field(k, v) for k, v in (details or {}).items()}
     log_extra = {"alert_level": level, "alert_title": title, **details}
 
     if level == "critical":
