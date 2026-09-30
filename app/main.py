@@ -13,6 +13,9 @@ from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
 from app.services.admin_token_service import AdminTokenService
 from app.utils.tracing import exclude_health_checks, install_query_redaction
+from app.core.logging import setup_logging
+
+setup_logging()
 
 
 class HealthCheckFilter(logging.Filter):

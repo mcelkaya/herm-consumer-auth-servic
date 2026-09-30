@@ -3,6 +3,7 @@ import uuid
 from typing import Dict, Optional
 import boto3
 from botocore.exceptions import ClientError
+from app.core.pii import mask_email
 from app.core.config import settings
 import logging
 
@@ -82,7 +83,7 @@ class NotificationService:
 
             logger.info(
                 f"Email notification sent to SQS queue - "
-                f"Template: {template_slug}, Recipient: {recipient_email}, "
+                f"Template: {template_slug}, Recipient: {mask_email(recipient_email)}, "
                 f"Correlation ID: {correlation_id}, Message ID: {response.get('MessageId')}"
             )
             return True
@@ -90,14 +91,14 @@ class NotificationService:
         except ClientError as e:
             logger.error(
                 f"Failed to send email notification to SQS - "
-                f"Template: {template_slug}, Recipient: {recipient_email}, "
+                f"Template: {template_slug}, Recipient: {mask_email(recipient_email)}, "
                 f"Correlation ID: {correlation_id}, Error: {str(e)}"
             )
             return False
         except Exception as e:
             logger.error(
                 f"Unexpected error sending email notification - "
-                f"Template: {template_slug}, Recipient: {recipient_email}, "
+                f"Template: {template_slug}, Recipient: {mask_email(recipient_email)}, "
                 f"Correlation ID: {correlation_id}, Error: {str(e)}"
             )
             return False

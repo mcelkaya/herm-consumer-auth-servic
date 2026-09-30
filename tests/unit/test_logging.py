@@ -20,15 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
-def configured_logging():
-    """Run the startup logging setup, then restore the root logger."""
-    from app.core.logging import setup_logging
-
+def unconfigured_root_logger():
+    """Put the root logger back to Python's default (WARNING, no handlers)."""
     root = logging.getLogger()
     saved_handlers, saved_level = root.handlers[:], root.level
     root.handlers.clear()
     root.setLevel(logging.WARNING)
-    setup_logging()
     yield
     root.handlers[:] = saved_handlers
     root.setLevel(saved_level)
@@ -61,7 +58,10 @@ def test_app_startup_emits_app_info_log_as_json_on_stdout():
     assert "trace_id" not in entry
 
 
-def test_app_log_inside_span_carries_trace_ids(configured_logging, capsys):
+def test_app_log_inside_span_carries_trace_ids(unconfigured_root_logger, capsys):
+    from app.core.logging import setup_logging
+
+    setup_logging()
     tracer = TracerProvider().get_tracer(__name__)
 
     with tracer.start_as_current_span("work") as span:
@@ -73,7 +73,10 @@ def test_app_log_inside_span_carries_trace_ids(configured_logging, capsys):
     assert entry["span_id"] == format(ctx.span_id, "016x")
 
 
-def test_sensitive_values_are_redacted_in_output(configured_logging, capsys):
+def test_sensitive_values_are_redacted_in_output(unconfigured_root_logger, capsys):
+    from app.core.logging import setup_logging
+
+    setup_logging()
     jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJlc2lnbmF0dXJl"
     logging.getLogger("app.services.forgot_password_service").info(
         "reset for victim@example.com from 203.0.113.9 token=abc123secret "
@@ -95,7 +98,10 @@ def test_sensitive_values_are_redacted_in_output(configured_logging, capsys):
     assert entry["extra"]["user_id"] == "u-1"
 
 
-def test_exception_text_is_redacted(configured_logging, capsys):
+def test_exception_text_is_redacted(unconfigured_root_logger, capsys):
+    from app.core.logging import setup_logging
+
+    setup_logging()
     try:
         raise ValueError("bad login for victim@example.com")
     except ValueError:
@@ -106,12 +112,18 @@ def test_exception_text_is_redacted(configured_logging, capsys):
     assert "victim@example.com" not in entry["exc_info"]
 
 
-def test_noisy_libraries_are_quietened(configured_logging):
+def test_noisy_libraries_are_quietened(unconfigured_root_logger):
+    from app.core.logging import setup_logging
+
+    setup_logging()
     for name in ("botocore", "boto3", "urllib3", "uvicorn.access", "httpx"):
         assert logging.getLogger(name).level == logging.WARNING
 
 
-def test_audit_logger_is_not_double_emitted(configured_logging, capsys):
+def test_audit_logger_is_not_double_emitted(unconfigured_root_logger, capsys):
+    from app.core.logging import setup_logging
+
+    setup_logging()
     from app.core.audit_log import audit
 
     audit("login_success", user_id="u-1")

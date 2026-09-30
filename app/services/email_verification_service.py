@@ -5,6 +5,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from fastapi import HTTPException, status
+from app.core.pii import mask_email
 from app.models.user import User
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.user_email_alias import UserEmailAlias
@@ -134,7 +135,7 @@ class EmailVerificationService:
 
         logger.info(
             f"Queued email verification notification: {message_id} "
-            f"for user: {user.email} (language: {language}, expires in {expiry_hours} hours)"
+            f"for user_id={user.id} (language: {language}, expires in {expiry_hours} hours)"
         )
 
         return True
@@ -176,7 +177,7 @@ class EmailVerificationService:
 
         logger.info(
             f"Queued alias email verification notification: {message_id} "
-            f"for alias: {alias.email} (user_id={user.id}, language={language}, "
+            f"for alias: {mask_email(alias.email)} (user_id={user.id}, language={language}, "
             f"expires in {expiry_hours} hours)"
         )
 
@@ -279,7 +280,7 @@ class EmailVerificationService:
         # clicks the same link twice.
         if user.is_verified:
             logger.info(
-                f"Email verification: User already verified: {user.email} "
+                f"Email verification: User already verified: user_id={user.id} "
                 f"(token used: {verification_token.is_used}, "
                 f"revoked: {verification_token.is_revoked()}) "
                 f"- returning success for idempotency"
@@ -296,7 +297,7 @@ class EmailVerificationService:
         # This is normal user behavior, not malicious. Tell them to use the latest email.
         if verification_token.is_revoked():
             logger.info(
-                f"Email verification: Superseded token for unverified user {user.email} "
+                f"Email verification: Superseded token for unverified user_id={user.id} "
                 f"- user likely clicked an older email after requesting a resend"
             )
             raise HTTPException(
@@ -309,7 +310,7 @@ class EmailVerificationService:
         # Reject for safety.
         if verification_token.is_used:
             logger.warning(
-                f"Email verification: Token already used but user NOT verified: {user.email} "
+                f"Email verification: Token already used but user NOT verified: user_id={user.id} "
                 f"(suspicious activity detected) - rejecting"
             )
             raise HTTPException(
@@ -333,8 +334,7 @@ class EmailVerificationService:
         await self.db.refresh(user)
 
         logger.info(
-            f"Email successfully verified for user: {user.email} "
-            f"(from IP: {ip_address or 'unknown'})"
+            f"Email successfully verified for user_id={user.id}"
         )
 
         return VerifyEmailResult(user=user, kind="primary")
@@ -367,7 +367,7 @@ class EmailVerificationService:
         # IDEMPOTENT: alias already verified — succeed regardless of token state.
         if alias.is_verified:
             logger.info(
-                f"Alias email verification: alias already verified: {alias.email} "
+                f"Alias email verification: alias already verified: {mask_email(alias.email)} "
                 f"(user_id={user.id}) — returning success for idempotency"
             )
             if not verification_token.is_used:
@@ -380,7 +380,7 @@ class EmailVerificationService:
         if verification_token.is_revoked():
             logger.info(
                 f"Alias email verification: superseded token for unverified alias "
-                f"{alias.email} (user_id={user.id})"
+                f"{mask_email(alias.email)} (user_id={user.id})"
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -391,7 +391,7 @@ class EmailVerificationService:
         if verification_token.is_used:
             logger.warning(
                 f"Alias email verification: token already used but alias NOT verified: "
-                f"{alias.email} (user_id={user.id}) — rejecting"
+                f"{mask_email(alias.email)} (user_id={user.id}) — rejecting"
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -416,7 +416,7 @@ class EmailVerificationService:
         if dup.scalar_one_or_none() is not None:
             logger.warning(
                 f"Alias email verification: address already verified by another user: "
-                f"{alias.email} (user_id={user.id})"
+                f"{mask_email(alias.email)} (user_id={user.id})"
             )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -438,7 +438,7 @@ class EmailVerificationService:
         if primary_owner.scalar_one_or_none() is not None:
             logger.warning(
                 f"Alias email verification: address is another user's primary "
-                f"email: {alias.email} (user_id={user.id})"
+                f"email: {mask_email(alias.email)} (user_id={user.id})"
             )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -458,8 +458,7 @@ class EmailVerificationService:
         await self.db.refresh(alias)
 
         logger.info(
-            f"Alias email verified: {alias.email} for user {user.id} "
-            f"(from IP: {ip_address or 'unknown'})"
+            f"Alias email verified: {mask_email(alias.email)} for user {user.id}"
         )
 
         return VerifyEmailResult(user=user, kind="alias", alias_email=alias.email)

@@ -113,8 +113,7 @@ class ResetPasswordService:
         await self.db.commit()
 
         logger.info(
-            f"Password successfully reset for user_id={user.id} "
-            f"(from IP: {ip_address or 'unknown'})"
+            f"Password successfully reset for user_id={user.id}"
         )
 
         return True

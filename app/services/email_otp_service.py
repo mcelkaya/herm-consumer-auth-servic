@@ -5,6 +5,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from fastapi import HTTPException, status
+from app.core.pii import mask_email
 from app.models.user import User
 from app.models.email_otp_code import EmailOtpCode
 from app.core.security import security_service
@@ -111,7 +112,7 @@ class EmailOtpService:
 
         logger.info(
             f"Queued email verification OTP notification: {message_id} "
-            f"for user: {user.email} (language: {language}, expires in {expiry_minutes} minutes)"
+            f"for user_id={user.id} (language: {language}, expires in {expiry_minutes} minutes)"
         )
 
         return True
@@ -157,7 +158,7 @@ class EmailOtpService:
         user = result.scalar_one_or_none()
 
         if not user:
-            logger.warning(f"OTP verification attempted for non-existent email: {email}")
+            logger.warning(f"OTP verification attempted for non-existent email: {mask_email(email)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired verification code",
@@ -231,8 +232,7 @@ class EmailOtpService:
         )
 
         logger.info(
-            f"Email successfully verified via OTP for user: {user.email} "
-            f"(from IP: {ip_address or 'unknown'})"
+            f"Email successfully verified via OTP for user_id={user.id}"
         )
 
         return VerifyOtpResult(

@@ -158,7 +158,7 @@ async def authorize(
         httponly=True,
         samesite="lax",
     )
-    logger.info("oidc authorize client_id=%s request_id=%s", client_id, request_id)
+    logger.info("oidc authorize client_id=%s", client_id)
     return resp
 
 

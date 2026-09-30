@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
+from app.core.pii import mask_email
 from app.models.user import User
 from app.models.password_reset_token import PasswordResetToken
 from app.services.sqs_producer import notification_producer
@@ -79,7 +80,7 @@ class ForgotPasswordService:
 
         if not user:
             # Don't reveal that user doesn't exist (security)
-            logger.info(f"Password reset requested for non-existent email: {email}")
+            logger.info(f"Password reset requested for non-existent email: {mask_email(email)}")
             return False
 
         # Create reset token
@@ -104,7 +105,7 @@ class ForgotPasswordService:
 
         logger.info(
             f"Queued password reset notification: {message_id} "
-            f"for user: {email} (language: {language}, expires in {expiry_hours} hours)"
+            f"for user: {mask_email(email)} (language: {language}, expires in {expiry_hours} hours)"
         )
 
         return True
