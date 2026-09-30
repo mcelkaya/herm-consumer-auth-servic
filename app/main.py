@@ -12,6 +12,7 @@ from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizer
 from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
 from app.services.admin_token_service import AdminTokenService
+from app.utils.tracing import exclude_health_checks, install_query_redaction
 
 
 class HealthCheckFilter(logging.Filter):
@@ -37,6 +38,8 @@ async def _cleanup_stale_tokens_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # FastAPI telemetry has installed the OTLP provider by now (if configured).
+    install_query_redaction()
     app.state.redis = aioredis.from_url(
         settings.REDIS_URL,
         encoding="utf-8",
@@ -56,6 +59,7 @@ app = FastAPI(
     redoc_url="/herm-auth/v1/public/redoc" if settings.DEBUG else None,
     openapi_url="/herm-auth/v1/public/openapi.json" if settings.DEBUG else None,
     lifespan=lifespan,
+    telemetry={"exclude": exclude_health_checks},
 )
 
 # CORS middleware - specific origins required when using credentials

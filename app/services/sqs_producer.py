@@ -5,7 +5,15 @@ import json
 import logging
 from typing import Optional
 import boto3
+from opentelemetry.trace import SpanKind
 from app.core.config import settings
+from app.utils.tracing import (
+    get_tracer,
+    inject_sqs_trace_context,
+    mark_span_error,
+    queue_name,
+    set_messaging_attributes,
+)
 from app.schemas.user import (
     NotificationMessage,
     RecipientSchema,
@@ -14,6 +22,7 @@ from app.schemas.user import (
 )
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 class NotificationProducer:
@@ -53,27 +62,45 @@ class NotificationProducer:
         Returns:
             Message ID from SQS
         """
+        attributes = {
+            'template_slug': {
+                'StringValue': message.template_slug,
+                'DataType': 'String'
+            },
+            'priority': {
+                'StringValue': message.priority.value,
+                'DataType': 'String'
+            },
+            'language': {
+                'StringValue': message.language,
+                'DataType': 'String'
+            }
+        }
         try:
-            response = self.sqs_client.send_message(
-                QueueUrl=self.queue_url,
-                MessageBody=message.model_dump_json(),
-                MessageAttributes={
-                    'template_slug': {
-                        'StringValue': message.template_slug,
-                        'DataType': 'String'
-                    },
-                    'priority': {
-                        'StringValue': message.priority.value,
-                        'DataType': 'String'
-                    },
-                    'language': {
-                        'StringValue': message.language,
-                        'DataType': 'String'
-                    }
-                }
-            )
-            
-            message_id = response.get('MessageId')
+            # No automatic exception recording: its message may echo PII.
+            with tracer.start_as_current_span(
+                f"send {queue_name(self.queue_url)}",
+                kind=SpanKind.PRODUCER,
+                record_exception=False,
+                set_status_on_exception=False,
+            ) as span:
+                set_messaging_attributes(
+                    span, self.queue_url, "send", message.metadata.get("correlation_id")
+                )
+                # Inject inside the span so the consumer becomes its child.
+                inject_sqs_trace_context(attributes)
+                try:
+                    response = self.sqs_client.send_message(
+                        QueueUrl=self.queue_url,
+                        MessageBody=message.model_dump_json(),
+                        MessageAttributes=attributes
+                    )
+                except Exception as e:
+                    mark_span_error(span, e)
+                    raise
+                message_id = response.get('MessageId')
+                if message_id:
+                    span.set_attribute("messaging.message.id", message_id)
             logger.info(
                 f"Sent notification to SQS - "
                 f"Template: {message.template_slug}, "

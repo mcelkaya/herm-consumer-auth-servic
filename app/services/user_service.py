@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from app.repositories.user_repository import UserRepository
 from app.core.security import security_service
 from app.schemas.user import UserSignup, UserLogin, TokenResponse
@@ -11,9 +12,11 @@ from app.services.token_service import TokenService, create_access_token
 from app.services.email_verification_service import EmailVerificationService
 from app.services.email_otp_service import EmailOtpService
 from app.core.config import settings
+from app.utils.tracing import get_tracer, inject_trace_headers, mark_span_error
 import logging
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 class UserService:
@@ -117,8 +120,24 @@ class UserService:
         headers = {"X-Internal-API-Key": settings.CONSUMER_INTERNAL_API_KEY}
 
         try:
-            async with httpx.AsyncClient(timeout=settings.CONSUMER_INTERNAL_TIMEOUT_SECONDS) as client:
-                response = await client.post(url, json=payload, headers=headers)
+            with tracer.start_as_current_span(
+                "POST /referrals/link-signup",
+                kind=SpanKind.CLIENT,
+                record_exception=False,
+                set_status_on_exception=False,
+            ) as span:
+                span.set_attribute("http.request.method", "POST")
+                # Internal herm service: continue the trace in consumer-service.
+                inject_trace_headers(headers)
+                try:
+                    async with httpx.AsyncClient(timeout=settings.CONSUMER_INTERNAL_TIMEOUT_SECONDS) as client:
+                        response = await client.post(url, json=payload, headers=headers)
+                except Exception as exc:
+                    mark_span_error(span, exc)
+                    raise
+                span.set_attribute("http.response.status_code", response.status_code)
+                if response.status_code >= 500:
+                    span.set_status(Status(StatusCode.ERROR))
                 if response.status_code >= 400:
                     logger.warning(
                         "Referral signup linking request failed",

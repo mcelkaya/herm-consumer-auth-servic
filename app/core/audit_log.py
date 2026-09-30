@@ -8,6 +8,8 @@ import logging
 import datetime
 from typing import Optional
 
+from opentelemetry import trace
+
 
 class _JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -16,6 +18,11 @@ class _JSONFormatter(logging.Formatter):
             "level": record.levelname,
             "event": record.getMessage(),
         }
+        # Correlate CloudWatch lines with OTel traces.
+        span_ctx = trace.get_current_span().get_span_context()
+        if span_ctx.is_valid:
+            payload["trace_id"] = format(span_ctx.trace_id, "032x")
+            payload["span_id"] = format(span_ctx.span_id, "016x")
         if hasattr(record, "audit"):
             payload.update(record.audit)
         return json.dumps(payload)
