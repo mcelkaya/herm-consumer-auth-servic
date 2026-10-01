@@ -93,6 +93,28 @@ async def test_new_code_after_lockout_does_not_reset_the_email_budget(
     assert r.status_code == 400, f"new code reset the per-email budget: {r.status_code} {r.json()}"
 
 
+@pytest.mark.asyncio
+async def test_email_budget_window_is_fifteen_minutes(
+    client: AsyncClient, test_user: User, stub_notification_sqs
+):
+    """The per-email lockout lasts 15 minutes (product decision, 2026-10-01)."""
+    from app.main import app
+    from app.middleware.rate_limit import OTP_EMAIL_WINDOW_SECONDS, _otp_email_key
+
+    assert OTP_EMAIL_WINDOW_SECONDS == 15 * 60
+
+    r = await client.post(f"{AUTH}/send-otp", json={"email": test_user.email}, headers=_ip(20))
+    assert r.status_code == 200
+    wrong = _wrong(_last_otp(stub_notification_sqs))
+    r = await client.post(
+        f"{AUTH}/verify-otp", json={"email": test_user.email, "code": wrong}, headers=_ip(20)
+    )
+    assert r.status_code == 400
+
+    ttl = await app.state.redis.ttl(_otp_email_key(test_user.email))
+    assert 0 < ttl <= 15 * 60
+
+
 async def _median_time(client: AsyncClient, path: str, payload: dict, headers: dict, n: int) -> float:
     samples = []
     for _ in range(n):

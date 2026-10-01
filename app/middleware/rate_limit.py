@@ -116,7 +116,7 @@ async def rate_limit_verify_otp(request: Request):
 # every email, whether or not an account exists, so the lockout itself does
 # not reveal existence. Cleared on a successful verification.
 OTP_EMAIL_MAX_ATTEMPTS = OTP_MAX_ATTEMPTS
-OTP_EMAIL_WINDOW_SECONDS = 60 * 60
+OTP_EMAIL_WINDOW_SECONDS = 15 * 60
 
 
 def _otp_email_key(email: str) -> str:
