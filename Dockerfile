@@ -54,4 +54,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/herm-auth/v1/public/health', timeout=5).raise_for_status()"
 
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --log-config: uvicorn's own error/access lines go through pii.redact (KVKK);
+# the file is copied by `COPY . .` and resolves from WORKDIR /app.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-config", "uvicorn_log_config.json"]
