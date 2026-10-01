@@ -8,9 +8,11 @@ Contract under test:
   changes.
 * ``ACCESS_TOKEN_ALGORITHM=RS256``: access tokens (consumer + admin) are signed
   in-process with the active key from ``ACCESS_TOKEN_SIGNING_KEYS`` and carry
-  kid/iss/aud; they verify against the published access-token JWKS with pinned
+  kid/iss/aud; they verify against the published JWKS with pinned
   algorithms; alg-confusion and unknown kids are rejected.
-* The access-token JWKS is a separate document; the OIDC JWKS is unchanged.
+* /herm-auth/.well-known/jwks.json is byte-identical to origin/main while no
+  keyset is configured, and lists the ``at-*`` keys after the OIDC keys once
+  one is. OIDC tokens can never carry the internal ``aud``.
 
 All RSA keys are generated at test time; no key material is committed.
 """
@@ -300,24 +302,37 @@ def test_hs256_tokens_still_verify_in_rs256_mode(mode, rsa_old):
     assert security_service.decode_token(hs_token)["sub"] == "42"
 
 
-# --- (3) JWKS ------------------------------------------------------------------------
+# --- (3) JWKS: one document, /herm-auth/.well-known/jwks.json -------------------------
+
+JWKS_PATH = "/herm-auth/.well-known/jwks.json"
+OIDC_KID = "oidcThumbprintKid0123456789abcdefghijklmnopq"
 
 
-async def _get(path):
-    from app.main import app
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+async def _get(path, app=None, base_url="http://test"):
+    if app is None:
+        from app.main import app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=base_url) as c:
         return await c.get(path)
 
 
+def _main_app():
+    """origin/main's discovery/JWKS router, mounted exactly as app.main mounts it."""
+    from fastapi import FastAPI
+    from tests._frozen import auth_main_well_known
+
+    frozen = FastAPI()
+    frozen.include_router(auth_main_well_known.router, prefix="/herm-auth")
+    return frozen
+
+
 @pytest.fixture
-def oidc_enabled(monkeypatch):
-    """OIDC JWKS endpoint enabled with a stubbed KMS-backed key service + DB."""
-    from app.api import well_known
+def oidc_stub(monkeypatch):
+    """Stub the KMS/DB-backed OIDC key service (same singleton both routers use)."""
     from app.db.session import get_db
     from app.main import app
+    from app.services.oidc_key_service import oidc_key_service
 
-    oidc_jwks = {"keys": [{"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "oidcThumbprintKid", "n": "AQAB", "e": "AQAB"}]}
+    oidc_jwks = {"keys": [{"kty": "RSA", "use": "sig", "alg": "RS256", "kid": OIDC_KID, "n": "AQAB", "e": "AQAB"}]}
 
     async def ensure_active_key(db):
         return None
@@ -328,55 +343,118 @@ def oidc_enabled(monkeypatch):
     async def fake_db():
         yield None
 
-    monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", True)
-    monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", "arn:aws:kms:eu-central-1:0:key/test")
-    monkeypatch.setattr(well_known.oidc_key_service, "ensure_active_key", ensure_active_key)
-    monkeypatch.setattr(well_known.oidc_key_service, "get_jwks", get_jwks)
-    app.dependency_overrides[get_db] = fake_db
-    yield oidc_jwks
+    monkeypatch.setattr(oidc_key_service, "ensure_active_key", ensure_active_key)
+    monkeypatch.setattr(oidc_key_service, "get_jwks", get_jwks)
+    frozen = _main_app()
+    for a in (app, frozen):
+        a.dependency_overrides[get_db] = fake_db
+    yield SimpleNamespace(jwks=oidc_jwks, frozen=frozen)
     app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.mark.asyncio
-async def test_access_token_jwks_absent_without_keyset(mode):
+@pytest.mark.parametrize(
+    "oidc_enabled,key_arn",
+    [(True, "arn:aws:kms:eu-central-1:0:key/test"), (True, None), (False, "arn:aws:kms:eu-central-1:0:key/test"), (False, None)],
+)
+async def test_jwks_without_keyset_is_identical_to_origin_main(mode, oidc_stub, monkeypatch, oidc_enabled, key_arn):
     mode("HS256", None)
-    assert (await _get("/herm-auth/.well-known/access-token-jwks.json")).status_code == 404
+    monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", oidc_enabled)
+    monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", key_arn)
+    for path in (JWKS_PATH, "/herm-auth/.well-known/openid-configuration"):
+        new = await _get(path)
+        old = await _get(path, app=oidc_stub.frozen)
+        assert (new.status_code, new.content, new.headers.get("cache-control")) == (
+            old.status_code, old.content, old.headers.get("cache-control"),
+        ), path
 
 
 @pytest.mark.asyncio
-async def test_access_token_jwks_published_when_configured(mode, rsa_old, rsa_new):
+async def test_jwks_includes_access_token_keys_alongside_oidc_keys(mode, oidc_stub, monkeypatch, rsa_old, rsa_new):
+    monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", True)
+    monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", "arn:aws:kms:eu-central-1:0:key/test")
     mode("HS256", _keyset_json("at-new", {"at-old": rsa_old, "at-new": rsa_new}))
-    resp = await _get("/herm-auth/.well-known/access-token-jwks.json")
+    resp = await _get(JWKS_PATH)
     assert resp.status_code == 200
-    assert resp.headers["cache-control"] == "public, max-age=300"
+    assert resp.headers["cache-control"] == "public, max-age=3600"  # same as today
     keys = resp.json()["keys"]
-    assert {k["kid"] for k in keys} == {"at-old", "at-new"}
-    for k in keys:
+    assert keys[0] == oidc_stub.jwks["keys"][0]  # OIDC key first, untouched
+    access = keys[1:]
+    assert [k["kid"] for k in access] == ["at-old", "at-new"]
+    for k in access:
         assert set(k) == {"kty", "use", "alg", "kid", "n", "e"}  # no private parts
         assert (k["kty"], k["use"], k["alg"]) == ("RSA", "sig", "RS256")
+    assert len({k["kid"] for k in keys}) == len(keys)  # no kid collisions
+    # discovery document unchanged
+    disc = await _get("/herm-auth/.well-known/openid-configuration")
+    disc_main = await _get("/herm-auth/.well-known/openid-configuration", app=oidc_stub.frozen)
+    assert disc.content == disc_main.content
 
 
 @pytest.mark.asyncio
-async def test_access_token_jwks_independent_of_oidc_flag(mode, rsa_old, monkeypatch):
+async def test_jwks_serves_access_keys_even_when_oidc_disabled(mode, oidc_stub, monkeypatch, rsa_old):
     monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", False)
+    monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", None)
     mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
-    assert (await _get("/herm-auth/.well-known/jwks.json")).status_code == 404
-    assert (await _get("/herm-auth/.well-known/access-token-jwks.json")).status_code == 200
+    resp = await _get(JWKS_PATH)
+    assert resp.status_code == 200
+    assert [k["kid"] for k in resp.json()["keys"]] == ["at-old"]
 
 
 @pytest.mark.asyncio
-async def test_oidc_jwks_and_discovery_unchanged_by_access_keyset(mode, oidc_enabled, rsa_old):
-    mode("HS256", None)
-    before = await _get("/herm-auth/.well-known/jwks.json")
-    disc_before = await _get("/herm-auth/.well-known/openid-configuration")
+async def test_jwks_over_plain_internal_http_and_token_verifies_against_it(mode, oidc_stub, monkeypatch, rsa_old):
+    # Verifiers fetch http://prod-auth:8000/herm-auth/.well-known/jwks.json via Service Connect.
+    monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", True)
+    monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", "arn:aws:kms:eu-central-1:0:key/test")
     mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
-    after = await _get("/herm-auth/.well-known/jwks.json")
-    disc_after = await _get("/herm-auth/.well-known/openid-configuration")
+    resp = await _get(JWKS_PATH, base_url="http://prod-auth:8000")
+    assert resp.status_code == 200 and not resp.is_redirect
+    assert resp.headers["content-type"].startswith("application/json")
+    token = create_access_token(CONSUMER_USER)
+    assert _verify_with_jwks(token, resp.json())["sub"] == "42"
+    # an OIDC-kid lookup never resolves an access token and vice versa
+    assert jwt.get_unverified_header(token)["kid"] != OIDC_KID
 
-    assert before.status_code == after.status_code == 200
-    assert before.json() == after.json() == oidc_enabled  # OIDC keys only, no at-* kids
-    assert before.headers["cache-control"] == after.headers["cache-control"] == "public, max-age=3600"
-    assert disc_before.json() == disc_after.json()
+
+# --- OIDC tokens can never carry the internal access-token audience --------------------
+
+
+def test_oidc_audiences_never_equal_access_token_audience():
+    from app.models.oauth_client import OAuthClient
+    from app.services.oidc_token_service import ACCESS_TOKEN_AUD
+
+    assert ACCESS_TOKEN_AUD != settings.ACCESS_TOKEN_AUDIENCE
+    assert all(OAuthClient.generate_client_id() != "herm-api" for _ in range(100))
+    assert OAuthClient.CLIENT_ID_PREFIX == "herm_app_"
+
+
+def test_oidc_token_builders_refuse_access_token_audience(monkeypatch):
+    from app.services import oidc_token_service as ots
+
+    signed = []
+    monkeypatch.setattr(settings, "OIDC_PPID_SECRET", "ppid-test-secret-0123456789abcdef")  # gitleaks:allow
+    monkeypatch.setattr(ots.oidc_key_service, "sign", lambda data, key_arn=None: signed.append(data) or b"sig")
+    common = dict(kid="k", key_arn="arn", user_id="1", scopes=["openid"])
+
+    with pytest.raises(ValueError):
+        ots.oidc_token_service.build_id_token(client_id=settings.ACCESS_TOKEN_AUDIENCE, **common)
+    monkeypatch.setattr(ots, "ACCESS_TOKEN_AUD", settings.ACCESS_TOKEN_AUDIENCE)
+    with pytest.raises(ValueError):
+        ots.oidc_token_service.build_access_token(client_id="herm_app_x", **common)
+    assert signed == []  # refused before anything was sent to KMS
+
+    monkeypatch.setattr(ots, "ACCESS_TOKEN_AUD", "herm-userinfo")
+    ots.oidc_token_service.build_id_token(client_id="herm_app_x", **common)
+    ots.oidc_token_service.build_access_token(client_id="herm_app_x", **common)
+    assert len(signed) == 2
+
+
+@pytest.mark.parametrize("audience", ["herm-userinfo", "herm_app_abc"])
+def test_startup_rejects_access_audience_that_collides_with_oidc(mode, monkeypatch, audience):
+    mode("HS256", None)
+    monkeypatch.setattr(settings, "ACCESS_TOKEN_AUDIENCE", audience)
+    with pytest.raises(ValueError):
+        check_access_token_keys()
 
 
 # --- (4) startup validation + rotation -----------------------------------------------

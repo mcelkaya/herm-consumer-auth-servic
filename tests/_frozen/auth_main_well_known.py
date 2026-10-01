@@ -4,17 +4,11 @@ Served at the issuer root (``/herm-auth/.well-known/*``), unauthenticated and
 cacheable. The whole surface is gated behind ``OIDC_PROVIDER_ENABLED``; while
 the flag is off every endpoint returns 404, so shipping this router is a no-op
 until the provider is deliberately enabled.
-
-Exception: once ``ACCESS_TOKEN_SIGNING_KEYS`` holds a valid keyset, jwks.json
-also publishes the RS256 access-token keys (kid ``at-*``) and is served even
-with the OIDC flag off, because internal verifiers rely on it. Without a
-keyset jwks.json behaves exactly as before.
 """
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import get_access_token_keyset
 from app.db.session import get_db
 from app.services.oidc_key_service import oidc_key_service
 
@@ -54,10 +48,6 @@ async def openid_configuration(response: Response):
 
 @router.get("/jwks.json")
 async def jwks(response: Response, db: AsyncSession = Depends(get_db)):
-    access_keyset = get_access_token_keyset()
-    if access_keyset is not None:
-        return await _jwks_with_access_token_keys(response, db, access_keyset)
-    # No RS256 access-token keyset configured: unchanged OIDC-only behaviour.
     _require_enabled()
     if not settings.OIDC_SIGNING_KEY_ARN:
         raise HTTPException(
@@ -67,20 +57,3 @@ async def jwks(response: Response, db: AsyncSession = Depends(get_db)):
     await oidc_key_service.ensure_active_key(db)
     response.headers["Cache-Control"] = "public, max-age=3600"
     return await oidc_key_service.get_jwks(db)
-
-
-async def _jwks_with_access_token_keys(response: Response, db: AsyncSession, access_keyset) -> dict:
-    """
-    JWKS when RS256 access-token keys are configured: the OIDC keys (exactly as
-    above, when the provider is enabled and configured) followed by the
-    access-token keys (kid prefix ``at-``; served from memory). Internal
-    verifiers fetch this same document, so it is served even when the OIDC
-    provider is disabled. An OIDC-side failure (DB/KMS) still fails the whole
-    request, as today, so partners never cache a document missing their key.
-    """
-    oidc_keys = []
-    if settings.OIDC_PROVIDER_ENABLED and settings.OIDC_SIGNING_KEY_ARN:
-        await oidc_key_service.ensure_active_key(db)
-        oidc_keys = (await oidc_key_service.get_jwks(db))["keys"]
-    response.headers["Cache-Control"] = "public, max-age=3600"
-    return {"keys": [*oidc_keys, *access_keyset.public_jwks()["keys"]]}

@@ -7,12 +7,15 @@ which holds JSON injected from Secrets Manager:
 
     {"active": "<kid>", "keys": {"<kid>": "<PEM private key>", ...}}
 
-``active`` signs; every key in ``keys`` is published in the access-token JWKS
-and accepted for verification, so rotation is: add a new kid, switch
+``active`` signs; every key in ``keys`` is published in
+/herm-auth/.well-known/jwks.json (after the OIDC keys) and accepted for
+verification, so rotation is: add a new kid, switch
 ``active``, drop the old kid once its tokens expired.
 
 kids must start with ``at-`` so they can never collide with the OIDC signing
-key kids (RFC 7638 thumbprints) or the HS256 kids (16 hex chars).
+key kids (RFC 7638 thumbprints) or the HS256 kids (16 hex chars). OIDC tokens
+share iss and the JWKS; verifiers tell ours apart by aud (ACCESS_TOKEN_AUDIENCE),
+which OIDC tokens are guaranteed never to carry (see OidcTokenService._sign).
 
 Never log or repr key material: only kids and key sizes.
 See docs/rs256-gecis-plani.md (projects/docs) for the full plan.

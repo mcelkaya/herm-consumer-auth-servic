@@ -50,6 +50,11 @@ def pairwise_sub(client_id: str, user_id: str) -> str:
 
 class OidcTokenService:
     def _sign(self, header: dict, payload: dict, key_arn: str) -> str:
+        # Partner tokens share iss and JWKS with Herm's own RS256 access tokens;
+        # internal verifiers tell them apart by aud, so a partner token must
+        # never carry the internal access-token audience.
+        if payload.get("aud") == settings.ACCESS_TOKEN_AUDIENCE:
+            raise ValueError("OIDC token must not use the internal access-token audience")
         signing_input = f"{_seg(header)}.{_seg(payload)}".encode("ascii")
         signature = oidc_key_service.sign(signing_input, key_arn=key_arn)
         return f"{signing_input.decode('ascii')}.{_b64url(signature)}"

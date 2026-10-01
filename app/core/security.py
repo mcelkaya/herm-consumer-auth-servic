@@ -60,6 +60,14 @@ def check_access_token_keys() -> None:
     HS256 mode: no keyset is normal and silent; an invalid one is logged as
     ERROR (kids/sizes only) but does not block startup.
     """
+    from app.models.oauth_client import OAuthClient
+    from app.services.oidc_token_service import ACCESS_TOKEN_AUD as OIDC_ACCESS_TOKEN_AUD
+
+    audience = settings.ACCESS_TOKEN_AUDIENCE
+    if audience == OIDC_ACCESS_TOKEN_AUD or audience.startswith(OAuthClient.CLIENT_ID_PREFIX):
+        # Would make internal access tokens indistinguishable from partner OIDC tokens.
+        raise ValueError(f"ACCESS_TOKEN_AUDIENCE {audience!r} collides with an OIDC audience")
+
     rs256 = settings.ACCESS_TOKEN_ALGORITHM == "RS256"
     raw = settings.ACCESS_TOKEN_SIGNING_KEYS
     if not rs256 and (not raw or not raw.strip()):
