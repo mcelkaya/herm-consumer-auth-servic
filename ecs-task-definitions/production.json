@@ -26,6 +26,10 @@
           "value": "true"
         },
         {
+          "name": "ACCESS_TOKEN_ALGORITHM",
+          "value": "RS256"
+        },
+        {
           "name": "ENVIRONMENT",
           "value": "production"
         },
