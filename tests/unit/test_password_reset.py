@@ -31,7 +31,7 @@ class TestPasswordResetTokenModel:
     def test_is_expired_returns_true_for_expired_token(self):
         """Test that is_expired returns True for expired tokens"""
         token = PasswordResetToken(
-            token="test_token",
+            token_hash="test_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() - timedelta(hours=1)  # Expired 1 hour ago
         )
@@ -40,7 +40,7 @@ class TestPasswordResetTokenModel:
     def test_is_expired_returns_false_for_valid_token(self):
         """Test that is_expired returns False for valid tokens"""
         token = PasswordResetToken(
-            token="test_token",
+            token_hash="test_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() + timedelta(hours=1)  # Expires in 1 hour
         )
@@ -49,7 +49,7 @@ class TestPasswordResetTokenModel:
     def test_is_valid_returns_true_for_valid_token(self):
         """Test that is_valid returns True for valid tokens"""
         token = PasswordResetToken(
-            token="test_token",
+            token_hash="test_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False
@@ -59,7 +59,7 @@ class TestPasswordResetTokenModel:
     def test_is_valid_returns_false_for_expired_token(self):
         """Test that is_valid returns False for expired tokens"""
         token = PasswordResetToken(
-            token="test_token",
+            token_hash="test_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() - timedelta(hours=1),
             is_used=False
@@ -69,7 +69,7 @@ class TestPasswordResetTokenModel:
     def test_is_valid_returns_false_for_used_token(self):
         """Test that is_valid returns False for used tokens"""
         token = PasswordResetToken(
-            token="test_token",
+            token_hash="test_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=True
@@ -79,7 +79,7 @@ class TestPasswordResetTokenModel:
     def test_is_valid_returns_false_for_expired_and_used_token(self):
         """Test that is_valid returns False for expired and used tokens"""
         token = PasswordResetToken(
-            token="test_token",
+            token_hash="test_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() - timedelta(hours=1),
             is_used=True
@@ -131,7 +131,10 @@ class TestForgotPasswordService:
         assert kwargs["MessageAttributes"]["language"]["StringValue"] == "tr"
         body = json.loads(kwargs["MessageBody"])
         assert body["recipient"]["email"] == "reset@example.com"
-        assert body["variables"]["reset_link"].endswith(f"/reset-password?token={created_token.token}")
+        raw_token = body["variables"]["reset_link"].split("/reset-password?token=", 1)[1]
+        # The link carries the raw token; the persisted row only its hash.
+        assert created_token.token_hash == PasswordResetToken.hash_token(raw_token)
+        assert raw_token != created_token.token_hash
 
     @pytest.mark.asyncio
     async def test_create_reset_token_generates_valid_token(self, service, mock_db):
@@ -154,10 +157,11 @@ class TestForgotPasswordService:
 
         mock_db.refresh = mock_refresh
 
-        token = await service.create_reset_token(user_id, ip_address, expiry_hours=24)
+        token, raw_token = await service.create_reset_token(user_id, ip_address, expiry_hours=24)
 
         assert token.user_id == user_id
-        assert len(token.token) == 64
+        assert len(raw_token) == 64
+        assert token.token_hash == PasswordResetToken.hash_token(raw_token)
         assert token.ip_address == ip_address
         assert token.is_used is False
         assert token.expires_at > datetime.utcnow()
@@ -209,7 +213,7 @@ class TestResetPasswordService:
         """Test that verify_reset_token returns None for expired token"""
         expired_token = PasswordResetToken(
             id=uuid4(),
-            token="expired_token",
+            token_hash="expired_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() - timedelta(hours=1),
             is_used=False
@@ -229,7 +233,7 @@ class TestResetPasswordService:
         """Test that verify_reset_token returns None for used token"""
         used_token = PasswordResetToken(
             id=uuid4(),
-            token="used_token",
+            token_hash="used_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=True
@@ -249,7 +253,7 @@ class TestResetPasswordService:
         """Test that verify_reset_token returns token for valid token"""
         valid_token = PasswordResetToken(
             id=uuid4(),
-            token="valid_token",
+            token_hash="valid_token",
             user_id=uuid4(),
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False
@@ -263,7 +267,7 @@ class TestResetPasswordService:
         result = await service.verify_reset_token("valid_token")
 
         assert result is not None
-        assert result.token == "valid_token"
+        assert result.token_hash == "valid_token"
         assert result.is_valid() is True
 
     @pytest.mark.asyncio
@@ -286,7 +290,7 @@ class TestResetPasswordService:
         user_id = uuid4()
         valid_token = PasswordResetToken(
             id=uuid4(),
-            token="valid_token",
+            token_hash="valid_token",
             user_id=user_id,
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False

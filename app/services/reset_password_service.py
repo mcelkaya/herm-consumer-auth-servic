@@ -27,7 +27,9 @@ class ResetPasswordService:
             PasswordResetToken if valid, None otherwise
         """
         result = await self.db.execute(
-            select(PasswordResetToken).where(PasswordResetToken.token == token)
+            select(PasswordResetToken).where(
+                PasswordResetToken.token_hash == PasswordResetToken.hash_token(token)
+            )
         )
         reset_token = result.scalar_one_or_none()
 

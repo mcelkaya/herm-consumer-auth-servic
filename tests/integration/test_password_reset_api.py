@@ -10,6 +10,14 @@ from app.models.password_reset_token import PasswordResetToken
 from app.core.security import security_service
 
 
+def _reset_token(**kwargs) -> PasswordResetToken:
+    """Row holding only the hash; the raw token is kept on `.raw` for requests."""
+    raw = PasswordResetToken.generate_token()
+    row = PasswordResetToken(token_hash=PasswordResetToken.hash_token(raw), **kwargs)
+    row.raw = raw
+    return row
+
+
 @pytest.mark.asyncio
 class TestForgotPasswordEndpoint:
     """Tests for /herm-auth/v1/public/auth/forgot-password endpoint"""
@@ -93,8 +101,7 @@ class TestForgotPasswordEndpoint:
     ):
         """Test that forgot password invalidates old unused tokens"""
         # Create an old token
-        old_token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        old_token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() + timedelta(hours=24),
             is_used=False
@@ -151,8 +158,7 @@ class TestResetPasswordEndpoint:
     ):
         """Test reset password with valid token returns 200"""
         # Create valid token
-        token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False
@@ -163,7 +169,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": token.token,
+                "token": token.raw,
                 "new_password": "NewSecurePassword123!"
             }
         )
@@ -198,8 +204,7 @@ class TestResetPasswordEndpoint:
     ):
         """Test reset password with expired token returns 400"""
         # Create expired token
-        token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() - timedelta(hours=1),  # Expired
             is_used=False
@@ -210,7 +215,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": token.token,
+                "token": token.raw,
                 "new_password": "NewSecurePassword123!"
             }
         )
@@ -225,8 +230,7 @@ class TestResetPasswordEndpoint:
     ):
         """Test reset password with used token returns 400"""
         # Create used token
-        token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=True  # Already used
@@ -237,7 +241,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": token.token,
+                "token": token.raw,
                 "new_password": "NewSecurePassword123!"
             }
         )
@@ -254,8 +258,7 @@ class TestResetPasswordEndpoint:
         old_hashed_password = test_user.hashed_password
 
         # Create valid token
-        token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False
@@ -268,7 +271,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": token.token,
+                "token": token.raw,
                 "new_password": new_password
             }
         )
@@ -290,8 +293,7 @@ class TestResetPasswordEndpoint:
     ):
         """Test that reset password marks token as used"""
         # Create valid token
-        token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False
@@ -302,7 +304,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": token.token,
+                "token": token.raw,
                 "new_password": "NewSecurePassword123!"
             }
         )
@@ -339,8 +341,7 @@ class TestResetPasswordEndpoint:
         db_session.add_all([refresh_token1, refresh_token2])
 
         # Create password reset token
-        reset_token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        reset_token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False
@@ -352,7 +353,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": reset_token.token,
+                "token": reset_token.raw,
                 "new_password": "NewSecurePassword123!"
             }
         )
@@ -373,8 +374,7 @@ class TestResetPasswordEndpoint:
     ):
         """Test reset password with weak password returns 422"""
         # Create valid token
-        token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+        token = _reset_token(
             user_id=test_user.id,
             expires_at=datetime.utcnow() + timedelta(hours=1),
             is_used=False
@@ -386,7 +386,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": token.token,
+                "token": token.raw,
                 "new_password": "short"  # Less than 8 characters
             }
         )
@@ -403,8 +403,7 @@ class TestResetPasswordEndpoint:
         # Create tokens for testing rate limit
         tokens = []
         for _ in range(6):  # Limit is 5
-            token = PasswordResetToken(
-                token=PasswordResetToken.generate_token(),
+            token = _reset_token(
                 user_id=test_user.id,
                 expires_at=datetime.utcnow() + timedelta(hours=1),
                 is_used=False
@@ -419,7 +418,7 @@ class TestResetPasswordEndpoint:
             response = await client.post(
                 "/herm-auth/v1/public/auth/reset-password",
                 json={
-                    "token": tokens[i].token,
+                    "token": tokens[i].raw,
                     "new_password": f"NewPassword{i}123!"
                 }
             )
@@ -429,7 +428,7 @@ class TestResetPasswordEndpoint:
         response = await client.post(
             "/herm-auth/v1/public/auth/reset-password",
             json={
-                "token": tokens[5].token,
+                "token": tokens[5].raw,
                 "new_password": "NewPassword6123!"
             }
         )

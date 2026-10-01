@@ -24,8 +24,12 @@ class ForgotPasswordService:
         user_id: UUID,
         ip_address: Optional[str],
         expiry_hours: int = 24
-    ) -> PasswordResetToken:
-        """Create password reset token and invalidate old ones"""
+    ) -> tuple[PasswordResetToken, str]:
+        """Create password reset token and invalidate old ones.
+
+        Returns the persisted row (which holds only the token's hash) plus the
+        raw token, which is needed exactly once: to build the emailed link.
+        """
         # Invalidate existing unused tokens for this user
         result = await self.db.execute(
             select(PasswordResetToken).where(
@@ -41,8 +45,9 @@ class ForgotPasswordService:
             old_token.is_used = True
 
         # Create new token
+        raw_token = PasswordResetToken.generate_token()
         token = PasswordResetToken(
-            token=PasswordResetToken.generate_token(),
+            token_hash=PasswordResetToken.hash_token(raw_token),
             user_id=user_id,
             expires_at=datetime.utcnow() + timedelta(hours=expiry_hours),
             ip_address=ip_address
@@ -52,7 +57,7 @@ class ForgotPasswordService:
         await self.db.commit()
         await self.db.refresh(token)
 
-        return token
+        return token, raw_token
 
     async def process_forgot_password(
         self,
@@ -84,10 +89,10 @@ class ForgotPasswordService:
             return False
 
         # Create reset token
-        reset_token = await self.create_reset_token(user.id, ip_address, expiry_hours)
+        _, raw_token = await self.create_reset_token(user.id, ip_address, expiry_hours)
 
         # Build reset link
-        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token.token}"
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={raw_token}"
 
         # Prepare user name (simple fallback since User model doesn't have name fields)
         user_name = email.split('@')[0]
