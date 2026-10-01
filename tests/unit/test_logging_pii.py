@@ -117,18 +117,12 @@ class TestResetPasswordServiceLogging:
 
         user = _make_user("victim@example.com")
 
-        mock_reset_token = MagicMock()
-        mock_reset_token.user_id = user.id
-        mock_reset_token.is_valid.return_value = True
-        mock_reset_token.is_expired.return_value = False
-        mock_reset_token.is_used = False
-
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock()
 
-        # verify_reset_token result
+        # consume-token result (UPDATE ... RETURNING user_id)
         scalar1 = MagicMock()
-        scalar1.scalar_one_or_none.return_value = mock_reset_token
+        scalar1.scalar_one_or_none.return_value = user.id
         # get user result
         scalar2 = MagicMock()
         scalar2.scalar_one_or_none.return_value = user

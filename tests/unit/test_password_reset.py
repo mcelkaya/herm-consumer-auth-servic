@@ -197,80 +197,6 @@ class TestResetPasswordService:
         return ResetPasswordService(mock_db)
 
     @pytest.mark.asyncio
-    async def test_verify_reset_token_returns_none_for_nonexistent_token(self, service, mock_db):
-        """Test that verify_reset_token returns None for non-existent token"""
-        # Mock empty result
-        mock_result = AsyncMock()
-        mock_result.scalar_one_or_none = MagicMock(return_value=None)
-        mock_db.execute.return_value = mock_result
-
-        result = await service.verify_reset_token("invalid_token")
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_verify_reset_token_returns_none_for_expired_token(self, service, mock_db):
-        """Test that verify_reset_token returns None for expired token"""
-        expired_token = PasswordResetToken(
-            id=uuid4(),
-            token_hash="expired_token",
-            user_id=uuid4(),
-            expires_at=datetime.utcnow() - timedelta(hours=1),
-            is_used=False
-        )
-
-        # Mock result with expired token
-        mock_result = AsyncMock()
-        mock_result.scalar_one_or_none = MagicMock(return_value=expired_token)
-        mock_db.execute.return_value = mock_result
-
-        result = await service.verify_reset_token("expired_token")
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_verify_reset_token_returns_none_for_used_token(self, service, mock_db):
-        """Test that verify_reset_token returns None for used token"""
-        used_token = PasswordResetToken(
-            id=uuid4(),
-            token_hash="used_token",
-            user_id=uuid4(),
-            expires_at=datetime.utcnow() + timedelta(hours=1),
-            is_used=True
-        )
-
-        # Mock result with used token
-        mock_result = AsyncMock()
-        mock_result.scalar_one_or_none = MagicMock(return_value=used_token)
-        mock_db.execute.return_value = mock_result
-
-        result = await service.verify_reset_token("used_token")
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_verify_reset_token_returns_token_for_valid_token(self, service, mock_db):
-        """Test that verify_reset_token returns token for valid token"""
-        valid_token = PasswordResetToken(
-            id=uuid4(),
-            token_hash="valid_token",
-            user_id=uuid4(),
-            expires_at=datetime.utcnow() + timedelta(hours=1),
-            is_used=False
-        )
-
-        # Mock result with valid token
-        mock_result = AsyncMock()
-        mock_result.scalar_one_or_none = MagicMock(return_value=valid_token)
-        mock_db.execute.return_value = mock_result
-
-        result = await service.verify_reset_token("valid_token")
-
-        assert result is not None
-        assert result.token_hash == "valid_token"
-        assert result.is_valid() is True
-
-    @pytest.mark.asyncio
     async def test_reset_password_raises_exception_for_invalid_token(self, service, mock_db):
         """Test that reset_password raises HTTPException for invalid token"""
         # Mock empty result (token not found)
@@ -288,13 +214,6 @@ class TestResetPasswordService:
     async def test_reset_password_raises_exception_for_inactive_user(self, service, mock_db):
         """Test that reset_password raises HTTPException for inactive user"""
         user_id = uuid4()
-        valid_token = PasswordResetToken(
-            id=uuid4(),
-            token_hash="valid_token",
-            user_id=user_id,
-            expires_at=datetime.utcnow() + timedelta(hours=1),
-            is_used=False
-        )
 
         inactive_user = User(
             id=user_id,
@@ -303,9 +222,10 @@ class TestResetPasswordService:
             is_active=False
         )
 
-        # reset_password looks up the token first, then the user it belongs to
+        # reset_password consumes the token first (UPDATE ... RETURNING user_id),
+        # then loads the user it belongs to.
         token_result = MagicMock()
-        token_result.scalar_one_or_none = MagicMock(return_value=valid_token)
+        token_result.scalar_one_or_none = MagicMock(return_value=user_id)
         user_result = MagicMock()
         user_result.scalar_one_or_none = MagicMock(return_value=inactive_user)
         mock_db.execute.side_effect = [token_result, user_result]
@@ -315,3 +235,6 @@ class TestResetPasswordService:
 
         assert exc_info.value.status_code == 403
         assert "inactive" in exc_info.value.detail.lower()
+        # The consume is rolled back, so the token stays usable.
+        mock_db.rollback.assert_awaited_once()
+        mock_db.commit.assert_not_awaited()

@@ -322,13 +322,18 @@ class TestEmailOtpServiceVerify:
         user_result.scalar_one_or_none = MagicMock(return_value=user)
         code_result = AsyncMock()
         code_result.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=otp_code)))
-        mock_db.execute.side_effect = [user_result, code_result]
+        # The attempt is reserved in SQL (UPDATE ... attempt_count + 1
+        # RETURNING attempt_count) and committed before the guess is checked.
+        reserve_result = MagicMock()
+        reserve_result.scalar_one_or_none = MagicMock(return_value=1)
+        mock_db.execute.side_effect = [user_result, code_result, reserve_result]
 
         with pytest.raises(HTTPException) as exc_info:
             await service.verify_otp_code(user.email, "000000")
 
         assert exc_info.value.status_code == 400
-        assert otp_code.attempt_count == 1
+        assert mock_db.execute.await_count == 3
+        mock_db.commit.assert_awaited_once()
         assert otp_code.is_used is False
 
     @pytest.mark.asyncio
@@ -349,21 +354,24 @@ class TestEmailOtpServiceVerify:
         user_result.scalar_one_or_none = MagicMock(return_value=user)
         code_result = AsyncMock()
         code_result.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=otp_code)))
-        mock_db.execute.side_effect = [user_result, code_result]
+        reserve_result = MagicMock()
+        reserve_result.scalar_one_or_none = MagicMock(return_value=OTP_MAX_ATTEMPTS)
+        mock_db.execute.side_effect = [user_result, code_result, reserve_result]
 
         with pytest.raises(HTTPException) as exc_info:
             await service.verify_otp_code(user.email, "000000")
 
         assert exc_info.value.status_code == 400
-        assert otp_code.attempt_count == OTP_MAX_ATTEMPTS
-        assert otp_code.is_locked_out() is True
 
-        # A further attempt against the now-locked-out code is rejected with 429.
+        # A further attempt finds no attempt left to reserve (the conditional
+        # increment matches 0 rows) and is rejected without evaluating the code.
         user_result2 = AsyncMock()
         user_result2.scalar_one_or_none = MagicMock(return_value=user)
         code_result2 = AsyncMock()
         code_result2.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=otp_code)))
-        mock_db.execute.side_effect = [user_result2, code_result2]
+        reserve_result2 = MagicMock()
+        reserve_result2.scalar_one_or_none = MagicMock(return_value=None)
+        mock_db.execute.side_effect = [user_result2, code_result2, reserve_result2]
 
         with pytest.raises(HTTPException) as exc_info2:
             await service.verify_otp_code(user.email, "123456")
@@ -385,7 +393,11 @@ class TestEmailOtpServiceVerify:
         user_result.scalar_one_or_none = MagicMock(return_value=user)
         code_result = AsyncMock()
         code_result.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=otp_code)))
-        mock_db.execute.side_effect = [user_result, code_result]
+        reserve_result = MagicMock()
+        reserve_result.scalar_one_or_none = MagicMock(return_value=1)
+        consume_result = MagicMock()
+        consume_result.scalar_one_or_none = MagicMock(return_value=otp_code.id)
+        mock_db.execute.side_effect = [user_result, code_result, reserve_result, consume_result]
 
         refresh_token_obj = MagicMock()
         refresh_token_obj.token = "refresh-token-value"

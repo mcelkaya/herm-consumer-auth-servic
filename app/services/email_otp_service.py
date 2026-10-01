@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID, uuid4
-from sqlalchemy import select, and_
+from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 from datetime import datetime, timedelta
 from fastapi import HTTPException, status
 from app.core.pii import mask_email
 from app.models.user import User
-from app.models.email_otp_code import EmailOtpCode
+from app.models.email_otp_code import EmailOtpCode, OTP_MAX_ATTEMPTS
 from app.core.security import security_service
 from app.services.sqs_producer import notification_producer
 from app.services.token_service import TokenService, create_access_token
@@ -197,24 +198,68 @@ class EmailOtpService:
                 detail="Too many incorrect attempts. Please request a new code.",
             )
 
+        # Reserve one attempt atomically BEFORE evaluating the guess, and
+        # commit so parallel requests see it. The conditional increment
+        # row-locks the code, so at most OTP_MAX_ATTEMPTS guesses are ever
+        # evaluated per code, however many requests race (a read-check-write
+        # of attempt_count let every concurrent request through).
+        reserved = await self.db.execute(
+            update(EmailOtpCode)
+            .where(
+                EmailOtpCode.id == otp_code.id,
+                EmailOtpCode.attempt_count < OTP_MAX_ATTEMPTS,
+                EmailOtpCode.is_used == False,  # noqa: E712
+                EmailOtpCode.revoked_at.is_(None),
+            )
+            .values(attempt_count=EmailOtpCode.attempt_count + 1)
+            .returning(EmailOtpCode.attempt_count)
+            .execution_options(synchronize_session=False)
+        )
+        attempt = reserved.scalar_one_or_none()
+        await self.db.commit()
+
+        if attempt is None:
+            logger.warning(f"OTP verification attempted on locked-out or consumed code for user {user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many incorrect attempts. Please request a new code.",
+            )
+
         if not security_service.verify_password(code, otp_code.code_hash):
-            otp_code.attempt_count += 1
-            await self.db.commit()
             logger.warning(
                 f"OTP verification: wrong code for user {user.id} "
-                f"(attempt {otp_code.attempt_count})"
+                f"(attempt {attempt})"
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired verification code",
             )
 
-        # Match. Mark code used and verify the user (login-on-verify parity
-        # with EmailVerificationService.verify_email for kind="primary").
+        # Match. Consume the code atomically (single use under concurrency),
+        # then verify the user (login-on-verify parity with
+        # EmailVerificationService.verify_email for kind="primary").
         now = datetime.utcnow()
-        otp_code.is_used = True
-        otp_code.used_at = now
-        self.db.add(otp_code)
+        consumed = await self.db.execute(
+            update(EmailOtpCode)
+            .where(
+                EmailOtpCode.id == otp_code.id,
+                EmailOtpCode.is_used == False,  # noqa: E712
+                EmailOtpCode.revoked_at.is_(None),
+            )
+            .values(is_used=True, used_at=now)
+            .returning(EmailOtpCode.id)
+            .execution_options(synchronize_session=False)
+        )
+        if consumed.scalar_one_or_none() is None:
+            user_id = user.id
+            await self.db.rollback()
+            logger.warning(f"OTP verification: code already consumed for user {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification code",
+            )
+        set_committed_value(otp_code, "is_used", True)
+        set_committed_value(otp_code, "used_at", now)
 
         user.is_verified = True
         self.db.add(user)

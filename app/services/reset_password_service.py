@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from fastapi import HTTPException, status
@@ -18,33 +18,6 @@ class ResetPasswordService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.token_service = TokenService(db)
-
-    async def verify_reset_token(self, token: str) -> Optional[PasswordResetToken]:
-        """
-        Verify password reset token
-
-        Returns:
-            PasswordResetToken if valid, None otherwise
-        """
-        result = await self.db.execute(
-            select(PasswordResetToken).where(
-                PasswordResetToken.token_hash == PasswordResetToken.hash_token(token)
-            )
-        )
-        reset_token = result.scalar_one_or_none()
-
-        if not reset_token:
-            logger.warning(f"Password reset attempted with non-existent token")
-            return None
-
-        if not reset_token.is_valid():
-            logger.warning(
-                f"Password reset attempted with invalid token for user {reset_token.user_id} "
-                f"(expired: {reset_token.is_expired()}, used: {reset_token.is_used})"
-            )
-            return None
-
-        return reset_token
 
     async def reset_password(
         self,
@@ -66,10 +39,25 @@ class ResetPasswordService:
         Raises:
             HTTPException: If token is invalid or expired
         """
-        # Verify token
-        reset_token = await self.verify_reset_token(token)
+        # Consume the token atomically: the conditional UPDATE row-locks it, so
+        # of N concurrent requests with the same token exactly one matches
+        # `is_used = false`; the rest re-check after it commits and get 0 rows.
+        now = datetime.utcnow()
+        consumed = await self.db.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.token_hash == PasswordResetToken.hash_token(token),
+                PasswordResetToken.is_used == False,  # noqa: E712
+                PasswordResetToken.expires_at > now,
+            )
+            .values(is_used=True, used_at=now)
+            .returning(PasswordResetToken.user_id)
+            .execution_options(synchronize_session=False)
+        )
+        user_id = consumed.scalar_one_or_none()
 
-        if not reset_token:
+        if user_id is None:
+            logger.warning("Password reset attempted with invalid, expired or used token")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired password reset token"
@@ -77,20 +65,22 @@ class ResetPasswordService:
 
         # Get user
         result = await self.db.execute(
-            select(User).where(User.id == reset_token.user_id)
+            select(User).where(User.id == user_id)
         )
         user = result.scalar_one_or_none()
 
         if not user:
-            logger.error(f"User not found for valid token: {reset_token.user_id}")
+            await self.db.rollback()
+            logger.error(f"User not found for valid token: {user_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
 
-        # Check if user is active
+        # Check if user is active (roll back so the token is not consumed)
         if not user.is_active:
-            logger.warning(f"Password reset attempted for inactive user_id={user.id}")
+            await self.db.rollback()
+            logger.warning(f"Password reset attempted for inactive user_id={user_id}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is inactive"
@@ -102,11 +92,6 @@ class ResetPasswordService:
         # Update user password
         user.hashed_password = hashed_password
         self.db.add(user)
-
-        # Mark token as used
-        reset_token.is_used = True
-        reset_token.used_at = datetime.utcnow()
-        self.db.add(reset_token)
 
         # Revoke all refresh tokens for security (user needs to login again)
         await self.token_service.revoke_all_user_tokens(user.id)
