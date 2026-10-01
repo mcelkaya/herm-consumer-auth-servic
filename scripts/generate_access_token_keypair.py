@@ -38,7 +38,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--bits", type=int, choices=(2048, 3072, 4096), default=3072)
+    parser.add_argument("--bits", type=int, choices=(2048, 3072, 4096), default=2048,
+                        help="RSA size (2048 default: matches the OIDC KMS key; 3072 signs ~2.5x slower and adds ~170 chars per token)")
     parser.add_argument("--kid", help="kid for the new key (default at-YYYYMMDD-<random>)")
     parser.add_argument("--add-to", metavar="FILE", help="existing keyset JSON to extend ('-' = stdin)")
     parser.add_argument("--drop", metavar="KID", action="append", default=[], help="remove KID from the keyset")
