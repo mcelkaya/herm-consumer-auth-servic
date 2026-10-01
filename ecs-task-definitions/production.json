@@ -164,11 +164,11 @@
         },
         {
           "name": "SECRET_KEY",
-          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_secret_key"
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_jwt_next_secret_key"
         },
         {
           "name": "JWT_SECONDARY_SECRET_KEY",
-          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_jwt_next_secret_key"
+          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_secret_key"
         },
         {
           "name": "NOTIFICATION_QUEUE_URL",
