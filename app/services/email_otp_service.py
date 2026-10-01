@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import secrets
 from typing import Optional
 from uuid import UUID, uuid4
 from sqlalchemy import select, update, and_
@@ -16,6 +17,25 @@ from app.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def invalid_otp_error() -> HTTPException:
+    """The one response for every failed OTP verification (see verify_otp_code)."""
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid or expired verification code",
+    )
+
+
+# Hash of a random code nobody knows; computed once at import so the first
+# rejection in a worker isn't slower than the rest.
+_DUMMY_OTP_HASH = security_service.get_password_hash(f"{secrets.randbelow(1_000_000):06d}")
+
+
+def _reject_after_dummy_check(code: str) -> HTTPException:
+    """Spend the same bcrypt work as a real wrong guess, then reject."""
+    security_service.verify_password(code, _DUMMY_OTP_HASH)
+    return invalid_otp_error()
 
 
 @dataclass
@@ -143,60 +163,34 @@ class EmailOtpService:
         """
         Verify a 6-digit OTP code for the user identified by email.
 
-        State machine:
-          - user not found                          → 400 invalid code
-          - no active code for user                  → 400 invalid or expired
-          - code revoked (superseded by resend)       → 400 use latest code
-          - code expired                              → 400 invalid or expired
-          - code locked out (>= 5 wrong attempts)      → 429 too many attempts
-          - hash mismatch                             → increment attempt_count, 400
-          - match                                     → mark used, verify user, mint tokens
+        Every failure (unknown email, no/expired/superseded/locked-out code,
+        wrong code, lost race) raises the SAME 400 via invalid_otp_error(),
+        and each path does exactly one bcrypt check (a dummy one where there
+        is no real code), so neither the response nor its timing reveals
+        whether the email has an account. Match → mark used, verify user,
+        mint tokens.
 
         Raises:
-            HTTPException: with appropriate status and message
+            HTTPException: invalid_otp_error() on any failure
         """
         result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
 
         if not user:
             logger.warning(f"OTP verification attempted for non-existent email: {mask_email(email)}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification code",
-            )
+            raise _reject_after_dummy_check(code)
 
         otp_code = await self._get_active_code(user.id)
 
         if not otp_code:
             logger.warning(f"OTP verification attempted with no active code for user {user.id}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification code",
-            )
+            raise _reject_after_dummy_check(code)
 
-        if otp_code.is_revoked():
-            logger.info(
-                f"OTP verification: superseded code for user {user.id} "
-                f"- user likely requested a resend"
+        if otp_code.is_revoked() or otp_code.is_expired() or otp_code.is_locked_out():
+            logger.warning(
+                f"OTP verification attempted with revoked, expired or locked-out code for user {user.id}"
             )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This code has been replaced. Please use the most recent code.",
-            )
-
-        if otp_code.is_expired():
-            logger.warning(f"OTP verification attempted with expired code for user {user.id}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification code",
-            )
-
-        if otp_code.is_locked_out():
-            logger.warning(f"OTP verification attempted on locked-out code for user {user.id}")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many incorrect attempts. Please request a new code.",
-            )
+            raise _reject_after_dummy_check(code)
 
         # Reserve one attempt atomically BEFORE evaluating the guess, and
         # commit so parallel requests see it. The conditional increment
@@ -220,20 +214,14 @@ class EmailOtpService:
 
         if attempt is None:
             logger.warning(f"OTP verification attempted on locked-out or consumed code for user {user.id}")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many incorrect attempts. Please request a new code.",
-            )
+            raise _reject_after_dummy_check(code)
 
         if not security_service.verify_password(code, otp_code.code_hash):
             logger.warning(
                 f"OTP verification: wrong code for user {user.id} "
                 f"(attempt {attempt})"
             )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification code",
-            )
+            raise invalid_otp_error()
 
         # Match. Consume the code atomically (single use under concurrency),
         # then verify the user (login-on-verify parity with
@@ -254,10 +242,7 @@ class EmailOtpService:
             user_id = user.id
             await self.db.rollback()
             logger.warning(f"OTP verification: code already consumed for user {user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification code",
-            )
+            raise invalid_otp_error()
         set_committed_value(otp_code, "is_used", True)
         set_committed_value(otp_code, "used_at", now)
 

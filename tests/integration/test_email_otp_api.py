@@ -257,12 +257,15 @@ class TestVerifyOtpEndpoint:
             assert response.status_code == 400
 
         # 6th attempt (even with the correct code) is rejected: locked out.
+        # Same 400 + body as a wrong code, so a lockout doesn't reveal that
+        # the email has an account.
         response = await client.post(
             "/herm-auth/v1/public/auth/verify-otp",
             json={"email": test_user.email, "code": "123456"},
         )
 
-        assert response.status_code == 429
+        assert response.status_code == 400
+        assert response.json() == {"detail": "Invalid or expired verification code"}
 
         await db_session.refresh(otp_code)
         assert otp_code.attempt_count == OTP_MAX_ATTEMPTS

@@ -2,8 +2,12 @@
 Rate limiting middleware for API endpoints — Redis-backed, multi-worker safe.
 """
 
+import hashlib
+
 import redis.asyncio as aioredis
 from fastapi import Request, HTTPException, status
+
+from app.models.email_otp_code import OTP_MAX_ATTEMPTS
 
 
 def _get_client_ip(request: Request) -> str:
@@ -105,6 +109,36 @@ async def rate_limit_verify_otp(request: Request):
     # per-code brute-force lockout (5 wrong guesses); this IP-based limiter
     # is a second, independent layer against spraying guesses across codes.
     await _check_rate_limit(request, "verify_otp", max_requests=10, window_seconds=900)
+
+
+# Per-EMAIL budget of OTP verification attempts, independent of IP and of
+# which code is current: requesting a new code does not reset it. Counted for
+# every email, whether or not an account exists, so the lockout itself does
+# not reveal existence. Cleared on a successful verification.
+OTP_EMAIL_MAX_ATTEMPTS = OTP_MAX_ATTEMPTS
+OTP_EMAIL_WINDOW_SECONDS = 60 * 60
+
+
+def _otp_email_key(email: str) -> str:
+    # Hashed: no plaintext email (PII) in Redis key names.
+    digest = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
+    return f"rate:verify_otp_email:{digest}"
+
+
+async def reserve_otp_attempt_for_email(request: Request, email: str) -> bool:
+    """Atomically take one attempt from the email's budget BEFORE the code is
+    evaluated (so parallel requests can't overspend it). False = exhausted."""
+    redis: aioredis.Redis = request.app.state.redis
+    key = _otp_email_key(email)
+    # SET NX EX + INCR: the TTL is set atomically with the key, so a crash
+    # between two calls can't leave a counter that never expires.
+    await redis.set(key, 0, ex=OTP_EMAIL_WINDOW_SECONDS, nx=True)
+    return await redis.incr(key) <= OTP_EMAIL_MAX_ATTEMPTS
+
+
+async def clear_otp_attempts_for_email(request: Request, email: str) -> None:
+    redis: aioredis.Redis = request.app.state.redis
+    await redis.delete(_otp_email_key(email))
 
 
 # ---------------------------------------------------------------------------

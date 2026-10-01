@@ -376,7 +376,9 @@ class TestEmailOtpServiceVerify:
         with pytest.raises(HTTPException) as exc_info2:
             await service.verify_otp_code(user.email, "123456")
 
-        assert exc_info2.value.status_code == 429
+        # Same 400 as a wrong code (no lockout-specific 429: it revealed the account).
+        assert exc_info2.value.status_code == 400
+        assert exc_info2.value.detail == exc_info.value.detail
 
     @pytest.mark.asyncio
     async def test_verify_otp_code_success_marks_used_and_verifies_user(self, service, mock_db):

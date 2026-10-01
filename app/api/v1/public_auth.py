@@ -16,10 +16,11 @@ from app.services.token_service import TokenService, create_access_token
 from app.services.forgot_password_service import ForgotPasswordService
 from app.services.reset_password_service import ResetPasswordService
 from app.services.email_verification_service import EmailVerificationService
-from app.services.email_otp_service import EmailOtpService
+from app.services.email_otp_service import EmailOtpService, invalid_otp_error
 from app.core.config import settings
 from app.core.cookies import set_refresh_cookie
 from app.core.audit_log import audit
+from app.core.timing import min_duration
 from app.middleware.rate_limit import (
     rate_limit_forgot_password,
     rate_limit_reset_password,
@@ -28,9 +29,21 @@ from app.middleware.rate_limit import (
     rate_limit_verify_email,
     rate_limit_send_otp,
     rate_limit_verify_otp,
+    reserve_otp_attempt_for_email,
+    clear_otp_attempts_for_email,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public/auth", tags=["Authentication"])
+
+# Fixed response-time budgets for the endpoints whose work depends on whether
+# the account exists. Each must stay well above that endpoint's slow path
+# (forgot-password: DB + SQS; send-otp: bcrypt hash + DB + SQS); overruns are
+# logged by min_duration.
+FORGOT_PASSWORD_MIN_SECONDS = 0.5
+SEND_OTP_MIN_SECONDS = 1.0
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -92,19 +105,25 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(rate_limit_forgot_password)
 ) -> ForgotPasswordResponse:
-    import asyncio
     ip_address = request.client.host if request.client else None
     language = request_data.language or "en"
 
-    service = ForgotPasswordService(db)
-    await service.process_forgot_password(
-        email=request_data.email,
-        language=language,
-        ip_address=ip_address,
-        expiry_hours=24
-    )
+    # Same response in the same time whether or not the account exists: pad
+    # to a fixed budget, and don't let a failure on the existing-user path
+    # (DB / SQS) surface as a 500 that unknown emails never get.
+    async with min_duration(FORGOT_PASSWORD_MIN_SECONDS, "forgot-password"):
+        try:
+            service = ForgotPasswordService(db)
+            await service.process_forgot_password(
+                email=request_data.email,
+                language=language,
+                ip_address=ip_address,
+                expiry_hours=24
+            )
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"forgot-password: processing failed ({type(e).__name__})")
 
-    await asyncio.sleep(0.5)
     return ForgotPasswordResponse()
 
 
@@ -186,13 +205,19 @@ async def send_otp(
     language = request_data.language or "en"
 
     # Don't reveal whether the account exists or is already verified
-    # (same email-enumeration protection as forgot-password).
-    result = await db.execute(select(User).where(User.email == request_data.email))
-    user = result.scalar_one_or_none()
+    # (same email-enumeration protection as forgot-password): same response,
+    # padded to the same time (creating a code costs a bcrypt hash + SQS).
+    async with min_duration(SEND_OTP_MIN_SECONDS, "send-otp"):
+        try:
+            result = await db.execute(select(User).where(User.email == request_data.email))
+            user = result.scalar_one_or_none()
 
-    if user and not user.is_verified:
-        service = EmailOtpService(db)
-        await service.send_otp_email(user=user, language=language, ip_address=ip_address)
+            if user and not user.is_verified:
+                service = EmailOtpService(db)
+                await service.send_otp_email(user=user, language=language, ip_address=ip_address)
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"send-otp: processing failed ({type(e).__name__})")
 
     return SendOtpResponse()
 
@@ -208,6 +233,12 @@ async def verify_otp(
     ip_address = request.client.host if request.client else None
     device_info = request.headers.get("User-Agent")
 
+    # Per-email attempt budget (on top of the per-IP limit and the per-code
+    # attempt_count): counted for every email, existing or not, and not reset
+    # by requesting a new code. Exhausted → the same 400 as any wrong code.
+    if not await reserve_otp_attempt_for_email(request, body.email):
+        raise invalid_otp_error()
+
     service = EmailOtpService(db)
     result = await service.verify_otp_code(
         email=body.email,
@@ -215,6 +246,7 @@ async def verify_otp(
         ip_address=ip_address,
         device_info=device_info,
     )
+    await clear_otp_attempts_for_email(request, body.email)
 
     set_refresh_cookie(response, result.refresh_token)
 
