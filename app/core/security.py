@@ -1,12 +1,27 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from uuid import uuid4
-import jwt
 from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from app.core.config import settings
+from app.core.jwt_keys import HmacKeyRing
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _key_ring() -> HmacKeyRing:
+    # Built per call (cheap) so settings changes, e.g. in tests, take effect.
+    return HmacKeyRing(
+        settings.SECRET_KEY,
+        settings.JWT_SECONDARY_SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+        require_kid=settings.JWT_REQUIRE_KID,
+    )
+
+
+def check_jwt_keys() -> None:
+    """Startup guard: ERROR log for keys < 32 bytes; raise if enforcement is on."""
+    _key_ring().check_key_strength(enforce=settings.JWT_ENFORCE_MIN_KEY_LENGTH)
 
 
 class SecurityService:
@@ -50,10 +65,7 @@ class SecurityService:
         
         jti = to_encode.get("jti") or str(uuid4())
         to_encode.update({"exp": expire, "type": "access", "jti": jti})
-        encoded_jwt = jwt.encode(
-            to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
-        )
-        return encoded_jwt
+        return _key_ring().encode(to_encode)
     
     @staticmethod
     def create_refresh_token(data: dict) -> str:
@@ -61,19 +73,13 @@ class SecurityService:
         to_encode = data.copy()
         expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         to_encode.update({"exp": expire, "type": "refresh"})
-        encoded_jwt = jwt.encode(
-            to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
-        )
-        return encoded_jwt
+        return _key_ring().encode(to_encode)
     
     @staticmethod
     def decode_token(token: str) -> Optional[dict]:
         """Decode and verify JWT token"""
         try:
-            payload = jwt.decode(
-                token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-            )
-            return payload
+            return _key_ring().decode(token)
         except PyJWTError:
             return None
 

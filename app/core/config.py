@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
+    # Key rotation (see app/core/jwt_keys.py, docs/jwt-anahtar-rotasyonu.md).
+    # SECRET_KEY signs; JWT_SECONDARY_SECRET_KEY is verify-only (next key
+    # before the switch, previous key after it).
+    JWT_SECONDARY_SECRET_KEY: Optional[str] = None
+    # Reject tokens without a kid header (enable once all pre-kid tokens expired).
+    JWT_REQUIRE_KID: bool = False
+    # Refuse to start if a configured HMAC key is < 32 bytes (enable after rotation).
+    JWT_ENFORCE_MIN_KEY_LENGTH: bool = False
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     REFRESH_TOKEN_ROTATION_ENABLED: bool = True
