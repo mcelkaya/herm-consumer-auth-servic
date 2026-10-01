@@ -171,6 +171,10 @@
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_secret_key"
         },
         {
+          "name": "ACCESS_TOKEN_SIGNING_KEYS",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:373352901774:secret:prod/herm/auth/access-token-signing-keys-vlpOXp"
+        },
+        {
           "name": "NOTIFICATION_QUEUE_URL",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod-notification-queue_url"
         },
