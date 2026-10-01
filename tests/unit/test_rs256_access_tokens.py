@@ -1,18 +1,15 @@
-"""RS256 access tokens, step 1 (signer side only).
+"""RS256 access tokens (signer side, JWKS, startup, rotation).
 
 Contract under test:
 
-* ``ACCESS_TOKEN_ALGORITHM=HS256`` (default): every token auth issues is
-  byte-for-byte identical to what origin/main issues, and still verifies with
-  the verifier code deployed in herm-consumer-service today. No communication
-  changes.
-* ``ACCESS_TOKEN_ALGORITHM=RS256``: access tokens (consumer + admin) are signed
-  in-process with the active key from ``ACCESS_TOKEN_SIGNING_KEYS`` and carry
-  kid/iss/aud; they verify against the published JWKS with pinned
-  algorithms; alg-confusion and unknown kids are rejected.
-* /herm-auth/.well-known/jwks.json is byte-identical to origin/main while no
-  keyset is configured, and lists the ``at-*`` keys after the OIDC keys once
-  one is. OIDC tokens can never carry the internal ``aud``.
+* Access tokens (consumer + admin) are signed in-process with the active key
+  from ``ACCESS_TOKEN_SIGNING_KEYS`` and carry kid/iss/aud; they verify
+  against the published JWKS with pinned algorithms; alg-confusion and
+  unknown kids are rejected. HS256 is neither issued nor accepted (step 4b,
+  see tests/integration/test_rs256_only.py).
+* /herm-auth/.well-known/jwks.json is byte-identical to the pre-RS256 router
+  while no keyset is loaded, and lists the ``at-*`` keys after the OIDC keys
+  once one is. OIDC tokens can never carry the internal ``aud``.
 
 All RSA keys are generated at test time; no key material is committed.
 """
@@ -34,19 +31,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from httpx import ASGITransport, AsyncClient
 
-import app.core.security as security_module
 from app.core import access_token_keys
 from app.core.access_token_keys import AccessTokenKeySet
 from app.core.config import Settings, settings
 from app.core.security import check_access_token_keys, security_service
 from app.services.admin_token_service import create_admin_access_token
 from app.services.token_service import create_access_token
-from tests._frozen import auth_main_security as main_security
-from tests._frozen import consumer_service_security as consumer_verifier
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FROZEN_NOW = datetime(2026, 10, 1, 12, 0, 0)
-FROZEN_UUID = "11111111-2222-4333-8444-555555555555"
 ISSUER = "https://api.herm.test/herm-auth"
 AUDIENCE = "herm-api"
 
@@ -91,12 +83,6 @@ def _verify_with_jwks(token: str, jwks: dict, **kwargs) -> dict:
     )
 
 
-class _FrozenDatetime(datetime):
-    @classmethod
-    def utcnow(cls):
-        return FROZEN_NOW
-
-
 @pytest.fixture(scope="module")
 def rsa_old():
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -108,16 +94,8 @@ def rsa_new():
 
 
 @pytest.fixture
-def frozen(monkeypatch):
-    """Freeze time and jti in both the new signer and the frozen origin/main one."""
-    for module in (security_module, main_security):
-        monkeypatch.setattr(module, "datetime", _FrozenDatetime)
-        monkeypatch.setattr(module, "uuid4", lambda: FROZEN_UUID)
-
-
-@pytest.fixture
 def mode(monkeypatch):
-    def configure(algorithm="HS256", keyset=None):
+    def configure(keyset=None, algorithm="RS256"):
         monkeypatch.setattr(settings, "ACCESS_TOKEN_ALGORITHM", algorithm)
         monkeypatch.setattr(settings, "ACCESS_TOKEN_SIGNING_KEYS", keyset)
         monkeypatch.setattr(settings, "ACCESS_TOKEN_AUDIENCE", AUDIENCE)
@@ -131,82 +109,13 @@ CONSUMER_USER = SimpleNamespace(id=42, email="u@example.com", is_verified=True, 
 ADMIN_USER = SimpleNamespace(id=7, email="admin@example.com", role="super_admin")
 
 
-def _main_consumer_token():
-    return main_security.security_service.create_access_token(
-        data={
-            "sub": str(CONSUMER_USER.id),
-            "email": CONSUMER_USER.email,
-            "is_verified": CONSUMER_USER.is_verified,
-            "role": CONSUMER_USER.role,
-        }
-    )
+# --- (1) settings ------------------------------------------------------------------
 
 
-def _main_admin_token():
-    return main_security.security_service.create_access_token(
-        data={
-            "sub": str(ADMIN_USER.id),
-            "email": ADMIN_USER.email,
-            "role": ADMIN_USER.role,
-            "is_admin": True,
-        }
-    )
-
-
-# --- (1) HS256 default: no change on the wire -------------------------------------
-
-
-def test_settings_default_is_hs256_without_keyset():
-    fresh = Settings()
-    assert fresh.ACCESS_TOKEN_ALGORITHM == "HS256"
-    assert not fresh.ACCESS_TOKEN_SIGNING_KEYS
-    assert fresh.ACCESS_TOKEN_AUDIENCE == "herm-api"
-
-
-def test_invalid_algorithm_setting_is_rejected():
+@pytest.mark.parametrize("algorithm", ["none", "HS256"])
+def test_invalid_algorithm_setting_is_rejected(algorithm):
     with pytest.raises(ValueError):
-        Settings(ACCESS_TOKEN_ALGORITHM="none")
-
-
-@pytest.mark.parametrize("with_keyset", [False, True])
-def test_hs256_tokens_are_byte_identical_to_origin_main(frozen, mode, rsa_old, with_keyset):
-    # A configured keyset must not change anything while the mode is HS256.
-    mode("HS256", _keyset_json("at-old", {"at-old": rsa_old}) if with_keyset else None)
-
-    pairs = [
-        (create_access_token(CONSUMER_USER), _main_consumer_token()),
-        (create_admin_access_token(ADMIN_USER), _main_admin_token()),
-        (
-            security_service.create_access_token({"sub": "1"}, timedelta(minutes=5)),
-            main_security.security_service.create_access_token({"sub": "1"}, timedelta(minutes=5)),
-        ),
-        (
-            security_service.create_refresh_token({"sub": "1"}),
-            main_security.security_service.create_refresh_token({"sub": "1"}),
-        ),
-    ]
-    for new, old in pairs:
-        assert new == old  # same header, same claims, same signature
-        header, claims = _segments(new)
-        assert header == {"alg": "HS256", "typ": "JWT", "kid": header["kid"]}
-        assert not {"iss", "aud"} & claims.keys()
-
-
-def test_hs256_tokens_verify_with_deployed_consumer_service_verifier(mode):
-    mode("HS256")
-    for token in (create_access_token(CONSUMER_USER), create_admin_access_token(ADMIN_USER)):
-        claims = consumer_verifier.security_service.decode_token(token)
-        assert claims is not None
-        assert claims["type"] == "access"
-    assert consumer_verifier.security_service.get_user_id_from_token(
-        create_access_token(CONSUMER_USER)
-    ) == "42"
-
-
-def test_rs256_tokens_are_rejected_by_todays_verifiers(mode, rsa_old):
-    # Documents why step 2 (verifier dual-mode) MUST ship before RS256 is enabled.
-    mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
-    assert consumer_verifier.security_service.decode_token(create_access_token(CONSUMER_USER)) is None
+        Settings(ACCESS_TOKEN_ALGORITHM=algorithm)
 
 
 # --- (2) RS256 mode ------------------------------------------------------------------
@@ -214,7 +123,7 @@ def test_rs256_tokens_are_rejected_by_todays_verifiers(mode, rsa_old):
 
 @pytest.fixture
 def rs256(mode, rsa_old):
-    mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
+    mode(_keyset_json("at-old", {"at-old": rsa_old}))
     return AccessTokenKeySet.from_json(settings.ACCESS_TOKEN_SIGNING_KEYS).public_jwks()
 
 
@@ -235,12 +144,6 @@ def test_rs256_token_shape_and_jwks_verification(rs256, mint):
 def test_rs256_admin_token_keeps_admin_marker(rs256):
     claims = _verify_with_jwks(create_admin_access_token(ADMIN_USER), rs256)
     assert claims["is_admin"] is True and claims["role"] == "super_admin"
-
-
-def test_refresh_tokens_stay_hs256_in_rs256_mode(frozen, rs256):
-    token = security_service.create_refresh_token({"sub": "1"})
-    assert token == main_security.security_service.create_refresh_token({"sub": "1"})
-    assert security_service.decode_token(token)["type"] == "refresh"
 
 
 def test_rs256_unknown_kid_is_rejected(rs256, rsa_new):
@@ -283,23 +186,6 @@ def test_rs256_wrong_audience_issuer_or_expired_rejected(rs256, rsa_old):
     for claims in bad:
         token = jwt.encode(claims, rsa_old, algorithm="RS256", headers={"kid": "at-old"})
         assert security_service.decode_token(token) is None
-
-
-def test_hs256_mode_still_accepts_outstanding_rs256_tokens_when_keyset_present(mode, rsa_old):
-    # Rollback RS256 -> HS256: tokens already issued keep working on auth.
-    keyset = _keyset_json("at-old", {"at-old": rsa_old})
-    mode("RS256", keyset)
-    token = create_access_token(CONSUMER_USER)
-    mode("HS256", keyset)
-    assert security_service.decode_token(token)["sub"] == "42"
-    mode("HS256", None)
-    assert security_service.decode_token(token) is None
-
-
-def test_hs256_tokens_still_verify_in_rs256_mode(mode, rsa_old):
-    hs_token = create_access_token(CONSUMER_USER)
-    mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
-    assert security_service.decode_token(hs_token)["sub"] == "42"
 
 
 # --- (3) JWKS: one document, /herm-auth/.well-known/jwks.json -------------------------
@@ -358,7 +244,7 @@ def oidc_stub(monkeypatch):
     [(True, "arn:aws:kms:eu-central-1:0:key/test"), (True, None), (False, "arn:aws:kms:eu-central-1:0:key/test"), (False, None)],
 )
 async def test_jwks_without_keyset_is_identical_to_origin_main(mode, oidc_stub, monkeypatch, oidc_enabled, key_arn):
-    mode("HS256", None)
+    mode(None)
     monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", oidc_enabled)
     monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", key_arn)
     for path in (JWKS_PATH, "/herm-auth/.well-known/openid-configuration"):
@@ -373,7 +259,7 @@ async def test_jwks_without_keyset_is_identical_to_origin_main(mode, oidc_stub, 
 async def test_jwks_includes_access_token_keys_alongside_oidc_keys(mode, oidc_stub, monkeypatch, rsa_old, rsa_new):
     monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", True)
     monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", "arn:aws:kms:eu-central-1:0:key/test")
-    mode("HS256", _keyset_json("at-new", {"at-old": rsa_old, "at-new": rsa_new}))
+    mode(_keyset_json("at-new", {"at-old": rsa_old, "at-new": rsa_new}))
     resp = await _get(JWKS_PATH)
     assert resp.status_code == 200
     assert resp.headers["cache-control"] == "public, max-age=3600"  # same as today
@@ -395,7 +281,7 @@ async def test_jwks_includes_access_token_keys_alongside_oidc_keys(mode, oidc_st
 async def test_jwks_serves_access_keys_even_when_oidc_disabled(mode, oidc_stub, monkeypatch, rsa_old):
     monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", False)
     monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", None)
-    mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
+    mode(_keyset_json("at-old", {"at-old": rsa_old}))
     resp = await _get(JWKS_PATH)
     assert resp.status_code == 200
     assert [k["kid"] for k in resp.json()["keys"]] == ["at-old"]
@@ -406,7 +292,7 @@ async def test_jwks_over_plain_internal_http_and_token_verifies_against_it(mode,
     # Verifiers fetch http://prod-auth:8000/herm-auth/.well-known/jwks.json via Service Connect.
     monkeypatch.setattr(settings, "OIDC_PROVIDER_ENABLED", True)
     monkeypatch.setattr(settings, "OIDC_SIGNING_KEY_ARN", "arn:aws:kms:eu-central-1:0:key/test")
-    mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
+    mode(_keyset_json("at-old", {"at-old": rsa_old}))
     resp = await _get(JWKS_PATH, base_url="http://prod-auth:8000")
     assert resp.status_code == 200 and not resp.is_redirect
     assert resp.headers["content-type"].startswith("application/json")
@@ -451,7 +337,7 @@ def test_oidc_token_builders_refuse_access_token_audience(monkeypatch):
 
 @pytest.mark.parametrize("audience", ["herm-userinfo", "herm_app_abc"])
 def test_startup_rejects_access_audience_that_collides_with_oidc(mode, monkeypatch, audience):
-    mode("HS256", None)
+    mode(None)
     monkeypatch.setattr(settings, "ACCESS_TOKEN_AUDIENCE", audience)
     with pytest.raises(ValueError):
         check_access_token_keys()
@@ -460,25 +346,8 @@ def test_startup_rejects_access_audience_that_collides_with_oidc(mode, monkeypat
 # --- (4) startup validation + rotation -----------------------------------------------
 
 
-@pytest.mark.parametrize("raw", [None, "", "   "])
-def test_hs256_without_keyset_starts_silently(mode, caplog, raw):
-    mode("HS256", raw)
-    with caplog.at_level(logging.DEBUG):
-        check_access_token_keys()
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
-
-
-def test_hs256_with_invalid_keyset_logs_error_but_starts(mode, caplog, rsa_old):
-    pem = _pem(rsa_old)
-    mode("HS256", json.dumps({"active": "at-missing", "keys": {"at-old": pem}}))
-    with caplog.at_level(logging.INFO):
-        check_access_token_keys()
-    assert "jwt.access_token_keys_invalid" in caplog.text
-    assert "PRIVATE KEY" not in caplog.text
-
-
 def test_rs256_startup_logs_kids_and_sizes_only(mode, caplog, rsa_old, rsa_new):
-    mode("RS256", _keyset_json("at-new", {"at-old": rsa_old, "at-new": rsa_new}))
+    mode(_keyset_json("at-new", {"at-old": rsa_old, "at-new": rsa_new}))
     with caplog.at_level(logging.INFO):
         check_access_token_keys()
     assert "jwt.access_token_keys_loaded" in caplog.text
@@ -508,7 +377,7 @@ def _invalid_keysets(rsa_old):
 
 def test_rs256_startup_fails_fast_on_invalid_keyset(mode, rsa_old):
     for name, raw in _invalid_keysets(rsa_old).items():
-        mode("RS256", raw)
+        mode(raw)
         with pytest.raises(ValueError) as exc:
             check_access_token_keys()
         assert "PRIVATE KEY" not in str(exc.value), name
@@ -519,24 +388,24 @@ def test_rs256_startup_fails_fast_on_invalid_keyset(mode, rsa_old):
 async def test_lifespan_refuses_to_start_in_rs256_without_keys(mode):
     from app.main import app, lifespan
 
-    mode("RS256", None)
+    mode(None)
     with pytest.raises(ValueError):
         async with lifespan(app):
             pass
 
 
 def test_rs256_signing_without_keyset_raises_instead_of_falling_back(mode):
-    mode("RS256", None)
+    mode(None)
     with pytest.raises(Exception):
         create_access_token(CONSUMER_USER)
 
 
 def test_rotation_old_kid_token_verifies_while_new_key_signs(mode, rsa_old, rsa_new):
-    mode("RS256", _keyset_json("at-old", {"at-old": rsa_old}))
+    mode(_keyset_json("at-old", {"at-old": rsa_old}))
     old_token = create_access_token(CONSUMER_USER)
 
     # rotate: add new key, switch active, keep old for verification
-    mode("RS256", _keyset_json("at-new", {"at-old": rsa_old, "at-new": rsa_new}))
+    mode(_keyset_json("at-new", {"at-old": rsa_old, "at-new": rsa_new}))
     jwks = AccessTokenKeySet.from_json(settings.ACCESS_TOKEN_SIGNING_KEYS).public_jwks()
     new_token = create_access_token(CONSUMER_USER)
     assert jwt.get_unverified_header(new_token)["kid"] == "at-new"
@@ -545,7 +414,7 @@ def test_rotation_old_kid_token_verifies_while_new_key_signs(mode, rsa_old, rsa_
     assert security_service.decode_token(old_token)["sub"] == "42"
 
     # later: drop the old key
-    mode("RS256", _keyset_json("at-new", {"at-new": rsa_new}))
+    mode(_keyset_json("at-new", {"at-new": rsa_new}))
     jwks = AccessTokenKeySet.from_json(settings.ACCESS_TOKEN_SIGNING_KEYS).public_jwks()
     with pytest.raises(jwt.InvalidTokenError):
         _verify_with_jwks(old_token, jwks)

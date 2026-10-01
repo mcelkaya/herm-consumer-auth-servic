@@ -1,3 +1,26 @@
+import json
+import os
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+# Access tokens are RS256-only: give the whole test session a throwaway keyset
+# BEFORE app.core.config builds `settings` (generated per run, never committed).
+# Forced, not setdefault, so a developer's local .env cannot change the mode.
+TEST_ACCESS_TOKEN_KID = "at-test"
+TEST_ACCESS_TOKEN_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+os.environ["ACCESS_TOKEN_ALGORITHM"] = "RS256"
+os.environ["ACCESS_TOKEN_SIGNING_KEYS"] = json.dumps({
+    "active": TEST_ACCESS_TOKEN_KID,
+    "keys": {
+        TEST_ACCESS_TOKEN_KID: TEST_ACCESS_TOKEN_KEY.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode(),
+    },
+})
+
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator

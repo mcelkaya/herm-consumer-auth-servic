@@ -22,20 +22,12 @@
       ],
       "environment": [
         {
-          "name": "JWT_ENFORCE_MIN_KEY_LENGTH",
-          "value": "true"
-        },
-        {
           "name": "ACCESS_TOKEN_ALGORITHM",
           "value": "RS256"
         },
         {
           "name": "ENVIRONMENT",
           "value": "production"
-        },
-        {
-          "name": "ALGORITHM",
-          "value": "HS256"
         },
         {
           "name": "ACCESS_TOKEN_EXPIRE_MINUTES",
@@ -169,10 +161,6 @@
         {
           "name": "DATABASE_URL",
           "valueFrom": "arn:aws:secretsmanager:eu-central-1:373352901774:secret:prod/herm/auth/db-url-TyQ5sa:DATABASE_URL::"
-        },
-        {
-          "name": "SECRET_KEY",
-          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_secret_key"
         },
         {
           "name": "ACCESS_TOKEN_SIGNING_KEYS",

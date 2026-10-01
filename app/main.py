@@ -14,7 +14,7 @@ from app.services.token_service import TokenService
 from app.services.admin_token_service import AdminTokenService
 from app.utils.tracing import exclude_health_checks, install_query_redaction
 from app.core.logging import setup_logging
-from app.core.security import check_jwt_keys, check_access_token_keys
+from app.core.security import check_access_token_keys
 
 setup_logging()
 
@@ -42,11 +42,8 @@ async def _cleanup_stale_tokens_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Weak (< 32 byte) HS256 key: ERROR log, or refuse to start when
-    # JWT_ENFORCE_MIN_KEY_LENGTH is on.
-    check_jwt_keys()
-    # RS256 access-token keyset: refuse to start if ACCESS_TOKEN_ALGORITHM=RS256
-    # and the keyset is missing/invalid; silent when HS256 and unset.
+    # Access tokens are RS256-only: refuse to start unless ACCESS_TOKEN_ALGORITHM
+    # is RS256 and the ACCESS_TOKEN_SIGNING_KEYS keyset is present and valid.
     check_access_token_keys()
     # FastAPI telemetry has installed the OTLP provider by now (if configured).
     install_query_redaction()

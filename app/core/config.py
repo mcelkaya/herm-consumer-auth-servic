@@ -23,25 +23,16 @@ class Settings(BaseSettings):
     DATABASE_MAX_OVERFLOW: int = 10
     TEST_DATABASE_URL: str = ""
     
-    # JWT
-    SECRET_KEY: str
-    ALGORITHM: str = "HS256"
-    # Key rotation (see app/core/jwt_keys.py, docs/jwt-anahtar-rotasyonu.md).
-    # SECRET_KEY signs; JWT_SECONDARY_SECRET_KEY is verify-only (next key
-    # before the switch, previous key after it).
-    JWT_SECONDARY_SECRET_KEY: Optional[str] = None
-    # Reject tokens without a kid header (enable once all pre-kid tokens expired).
-    JWT_REQUIRE_KID: bool = False
-    # Refuse to start if a configured HMAC key is < 32 bytes (enable after rotation).
-    JWT_ENFORCE_MIN_KEY_LENGTH: bool = False
-    # RS256 access tokens (see app/core/access_token_keys.py, projects/docs/rs256-gecis-plani.md).
-    # HS256 (default): consumer/admin access tokens are unchanged (shared SECRET_KEY).
-    # RS256: signed with the active key of ACCESS_TOKEN_SIGNING_KEYS and given
-    # iss (= OIDC_ISSUER) + aud (= ACCESS_TOKEN_AUDIENCE). Do NOT enable before
-    # every verifier accepts RS256 via the access-token JWKS (step 2).
-    # Refresh tokens stay HS256 in both modes (only this service verifies them).
-    ACCESS_TOKEN_ALGORITHM: Literal["HS256", "RS256"] = "HS256"
-    # JSON {"active": kid, "keys": {kid: PEM}}, from Secrets Manager. Optional in HS256 mode.
+    # JWT access tokens: RS256 only (see app/core/access_token_keys.py,
+    # projects/docs/rs256-gecis-plani.md, step 4b). Signed with the active key
+    # of ACCESS_TOKEN_SIGNING_KEYS, carrying iss (= OIDC_ISSUER) + aud
+    # (= ACCESS_TOKEN_AUDIENCE). The old shared HS256 secret (SECRET_KEY) is
+    # gone: nothing signs or accepts HS256 any more. Startup refuses to boot
+    # unless the mode is RS256 and the keyset is valid.
+    # Refresh tokens are opaque DB rows (not JWTs).
+    ACCESS_TOKEN_ALGORITHM: Literal["RS256"] = "RS256"
+    # JSON {"active": kid, "keys": {kid: PEM}}, from Secrets Manager. Required.
+    # Local dev: python scripts/generate_access_token_keypair.py (see .env.example).
     ACCESS_TOKEN_SIGNING_KEYS: Optional[str] = None
     ACCESS_TOKEN_AUDIENCE: str = "herm-api"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
@@ -251,6 +242,8 @@ class Settings(BaseSettings):
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
         case_sensitive = True
         populate_by_name = True  # Allow using alias for env var
+        # Stale local .env entries (e.g. the retired SECRET_KEY/ALGORITHM) must not block boot.
+        extra = "ignore"
 
 
 settings = Settings()
