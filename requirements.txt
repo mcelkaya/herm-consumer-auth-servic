@@ -13,7 +13,7 @@ click==8.3.3
 coverage==7.13.5
 cryptography==47.0.0
 dnspython==2.8.0
-email-validator==2.1.0
+email-validator==2.3.0
 fastapi[opentelemetry]==0.142.2
 greenlet==3.4.0
 googleapis-common-protos==1.75.5
