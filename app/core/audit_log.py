@@ -10,13 +10,15 @@ from typing import Optional
 
 from opentelemetry import trace
 
+from app.core.pii import mask_ip, redact, redact_field
+
 
 class _JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "level": record.levelname,
-            "event": record.getMessage(),
+            "event": redact(record.getMessage()),
         }
         # Correlate CloudWatch lines with OTel traces.
         span_ctx = trace.get_current_span().get_span_context()
@@ -24,8 +26,19 @@ class _JSONFormatter(logging.Formatter):
             payload["trace_id"] = format(span_ctx.trace_id, "032x")
             payload["span_id"] = format(span_ctx.span_id, "016x")
         if hasattr(record, "audit"):
-            payload.update(record.audit)
+            payload.update(_sanitise(record.audit))
         return json.dumps(payload)
+
+
+_IP_FIELDS = {"ip", "client_ip", "ip_address"}
+
+
+def _sanitise(fields: dict) -> dict:
+    """Mask IPs to their network, emails to ``e***@domain``; redact everything else by name/content."""
+    return {
+        key: mask_ip(value) if key.lower() in _IP_FIELDS else redact_field(key, value)
+        for key, value in fields.items()
+    }
 
 
 def _build_logger() -> logging.Logger:

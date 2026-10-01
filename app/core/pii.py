@@ -1,12 +1,14 @@
 """Keep PII and credentials out of log lines.
 
 - ``mask_email("someone@example.com")`` -> ``"s***@example.com"`` (domain kept for debugging)
+- ``mask_ip("10.0.3.221")`` -> ``"10.0.3.0/24"`` (IPv6 -> /48; network kept for abuse analysis)
 - ``redact(text)``   -> free text with emails masked and JWTs, bearer tokens,
                         ``key=value`` secrets (token, code, verifier, request_id, ...) and IPv4/IPv6 removed
 - ``redact_field(key, value)`` -> value for a structured ``extra`` field; sensitive keys are dropped
 - ``validation_summary(errors)`` -> pydantic errors as ``loc:type`` only, never the echoed input
 """
 
+import ipaddress
 import re
 from typing import Any, Iterable, Optional
 
@@ -45,6 +47,18 @@ def mask_email(email: Optional[str]) -> str:
     if not sep:
         return REDACTED
     return f"{local[:1]}***@{domain}"
+
+
+def mask_ip(ip: Optional[str]) -> Optional[str]:
+    """``10.0.3.221`` -> ``10.0.3.0/24``; IPv6 -> its ``/48``. Keeps the network, drops the host."""
+    if not ip:
+        return None
+    try:
+        addr = ipaddress.ip_address(str(ip).strip())
+    except ValueError:
+        return REDACTED
+    prefix = 24 if addr.version == 4 else 48
+    return str(ipaddress.ip_network(f"{addr}/{prefix}", strict=False))
 
 
 def redact(text: Any) -> str:
