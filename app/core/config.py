@@ -2,7 +2,7 @@ import os
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 
 class Settings(BaseSettings):
@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     JWT_REQUIRE_KID: bool = False
     # Refuse to start if a configured HMAC key is < 32 bytes (enable after rotation).
     JWT_ENFORCE_MIN_KEY_LENGTH: bool = False
+    # RS256 access tokens (see app/core/access_token_keys.py, projects/docs/rs256-gecis-plani.md).
+    # HS256 (default): consumer/admin access tokens are unchanged (shared SECRET_KEY).
+    # RS256: signed with the active key of ACCESS_TOKEN_SIGNING_KEYS and given
+    # iss (= OIDC_ISSUER) + aud (= ACCESS_TOKEN_AUDIENCE). Do NOT enable before
+    # every verifier accepts RS256 via the access-token JWKS (step 2).
+    # Refresh tokens stay HS256 in both modes (only this service verifies them).
+    ACCESS_TOKEN_ALGORITHM: Literal["HS256", "RS256"] = "HS256"
+    # JSON {"active": kid, "keys": {kid: PEM}}, from Secrets Manager. Optional in HS256 mode.
+    ACCESS_TOKEN_SIGNING_KEYS: Optional[str] = None
+    ACCESS_TOKEN_AUDIENCE: str = "herm-api"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     REFRESH_TOKEN_ROTATION_ENABLED: bool = True

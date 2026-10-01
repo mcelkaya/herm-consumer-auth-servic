@@ -7,14 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.api.v1 import public_auth, pii_auth, admin_auth, internal, social_auth, social_link, internal_oauth, pii_oauth, apple_webhooks
-from app.api import well_known, oidc
+from app.api import well_known, oidc, access_token_jwks
 from app.middleware.security import SecurityHeadersMiddleware, NullByteSanitizerMiddleware
 from app.db.session import AsyncSessionLocal
 from app.services.token_service import TokenService
 from app.services.admin_token_service import AdminTokenService
 from app.utils.tracing import exclude_health_checks, install_query_redaction
 from app.core.logging import setup_logging
-from app.core.security import check_jwt_keys
+from app.core.security import check_jwt_keys, check_access_token_keys
 
 setup_logging()
 
@@ -45,6 +45,9 @@ async def lifespan(app: FastAPI):
     # Weak (< 32 byte) HS256 key: ERROR log, or refuse to start when
     # JWT_ENFORCE_MIN_KEY_LENGTH is on.
     check_jwt_keys()
+    # RS256 access-token keyset: refuse to start if ACCESS_TOKEN_ALGORITHM=RS256
+    # and the keyset is missing/invalid; silent when HS256 and unset.
+    check_access_token_keys()
     # FastAPI telemetry has installed the OTLP provider by now (if configured).
     install_query_redaction()
     app.state.redis = aioredis.from_url(
@@ -124,6 +127,9 @@ app.include_router(apple_webhooks.router, prefix="/herm-auth/v1")
 # Routes are always mounted but each returns 404 unless OIDC_PROVIDER_ENABLED.
 app.include_router(well_known.router, prefix="/herm-auth")
 app.include_router(oidc.router, prefix="/herm-auth")
+# RS256 access-token public keys (separate from the OIDC JWKS; 404 until a
+# keyset is configured). Not gated by OIDC_PROVIDER_ENABLED.
+app.include_router(access_token_jwks.router, prefix="/herm-auth")
 
 
 register_exception_handlers(app)
