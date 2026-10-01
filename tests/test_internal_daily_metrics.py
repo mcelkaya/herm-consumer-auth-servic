@@ -1,4 +1,4 @@
-"""Tests for GET /internal/stats/daily-metrics (daily Slack digest source)."""
+"""Tests for GET /herm-auth/v1/internal/stats/daily-metrics (daily Slack digest source)."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -7,7 +7,7 @@ import pytest
 from app.core.config import settings
 from app.models.user import User
 
-_URL = "/internal/stats/daily-metrics"
+_URL = "/herm-auth/v1/internal/stats/daily-metrics"
 
 
 @pytest.fixture(autouse=True)
