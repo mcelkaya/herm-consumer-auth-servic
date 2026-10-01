@@ -1,5 +1,6 @@
 """Unit tests for password reset functionality"""
 
+import json
 import pytest
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -104,19 +105,33 @@ class TestForgotPasswordService:
         return ForgotPasswordService(mock_db)
 
     @pytest.mark.asyncio
-    async def test_get_user_language_code_returns_en_by_default(self, service):
-        """Test that get_user_language_code returns 'en' by default"""
-        language_code = await service.get_user_language_code(uuid4())
-        assert language_code == 'en'
+    async def test_process_forgot_password_queues_reset_email_in_request_language(
+        self, service, mock_db, stub_notification_sqs
+    ):
+        """The reset email goes out as the notification service's "password_reset"
+        template, in the language the client sent, carrying the new token's link.
 
-    @pytest.mark.asyncio
-    async def test_get_email_template_returns_mock_template(self, service):
-        """Test that get_email_template returns a mock template"""
-        template = await service.get_email_template('forget_password', 'en')
-        assert template is not None
-        assert template.id == 1
-        assert hasattr(template, 'subject')
-        assert hasattr(template, 'content')
+        (Replaces the old get_user_language_code / get_email_template placeholder
+        tests: language now comes from the request and templates live in
+        herm-notification-service, selected by template_slug.)
+        """
+        user = User(id=uuid4(), email="reset@example.com", is_active=True)
+        user_result = MagicMock()
+        user_result.scalar_one_or_none = MagicMock(return_value=user)
+        old_tokens_result = MagicMock()
+        old_tokens_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+        mock_db.execute.side_effect = [user_result, old_tokens_result]
+        mock_db.refresh = AsyncMock()
+
+        assert await service.process_forgot_password("reset@example.com", language="tr") is True
+
+        (created_token,) = [c.args[0] for c in mock_db.add.call_args_list]
+        kwargs = stub_notification_sqs.send_message.call_args.kwargs
+        assert kwargs["MessageAttributes"]["template_slug"]["StringValue"] == "password_reset"
+        assert kwargs["MessageAttributes"]["language"]["StringValue"] == "tr"
+        body = json.loads(kwargs["MessageBody"])
+        assert body["recipient"]["email"] == "reset@example.com"
+        assert body["variables"]["reset_link"].endswith(f"/reset-password?token={created_token.token}")
 
     @pytest.mark.asyncio
     async def test_create_reset_token_generates_valid_token(self, service, mock_db):
@@ -129,17 +144,20 @@ class TestForgotPasswordService:
         mock_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         mock_db.execute.return_value = mock_result
 
-        # Create new refresh method that returns the token
+        # Emulate INSERT + refresh: the DB fills the PK and the column defaults
+        # (is_used=False, created_at) that SQLAlchemy only applies at flush time.
         async def mock_refresh(obj):
             obj.id = uuid4()
-            obj.token = PasswordResetToken.generate_token()
             obj.created_at = datetime.utcnow()
+            if obj.is_used is None:
+                obj.is_used = PasswordResetToken.__table__.c.is_used.default.arg
 
         mock_db.refresh = mock_refresh
 
         token = await service.create_reset_token(user_id, ip_address, expiry_hours=24)
 
         assert token.user_id == user_id
+        assert len(token.token) == 64
         assert token.ip_address == ip_address
         assert token.is_used is False
         assert token.expires_at > datetime.utcnow()
@@ -281,16 +299,12 @@ class TestResetPasswordService:
             is_active=False
         )
 
-        # Mock results for token and user queries
-        def side_effect(*args, **kwargs):
-            result = AsyncMock()
-            if "PasswordResetToken" in str(args):
-                result.scalar_one_or_none = MagicMock(return_value=valid_token)
-            else:
-                result.scalar_one_or_none = MagicMock(return_value=inactive_user)
-            return result
-
-        mock_db.execute.side_effect = side_effect
+        # reset_password looks up the token first, then the user it belongs to
+        token_result = MagicMock()
+        token_result.scalar_one_or_none = MagicMock(return_value=valid_token)
+        user_result = MagicMock()
+        user_result.scalar_one_or_none = MagicMock(return_value=inactive_user)
+        mock_db.execute.side_effect = [token_result, user_result]
 
         with pytest.raises(HTTPException) as exc_info:
             await service.reset_password("valid_token", "NewPassword123")
