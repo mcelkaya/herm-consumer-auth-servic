@@ -22,6 +22,10 @@
       ],
       "environment": [
         {
+          "name": "JWT_ENFORCE_MIN_KEY_LENGTH",
+          "value": "true"
+        },
+        {
           "name": "ENVIRONMENT",
           "value": "production"
         },
@@ -164,10 +168,6 @@
         },
         {
           "name": "SECRET_KEY",
-          "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_jwt_next_secret_key"
-        },
-        {
-          "name": "JWT_SECONDARY_SECRET_KEY",
           "valueFrom": "arn:aws:ssm:eu-central-1:373352901774:parameter/prod_secret_key"
         },
         {
