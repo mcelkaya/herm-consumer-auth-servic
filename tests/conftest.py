@@ -1,7 +1,7 @@
 import pytest
 import pytest_asyncio
-import asyncio
 from typing import AsyncGenerator
+from unittest.mock import MagicMock
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -10,6 +10,7 @@ from app.db.session import Base, get_db
 from app.core.config import settings
 from app.core.security import security_service
 from app.models.user import User
+from app.services.sqs_producer import notification_producer
 import redis.asyncio as aioredis
 
 # Test database URL
@@ -27,17 +28,6 @@ TestSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests"""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -94,6 +84,20 @@ async def test_user(db_session: AsyncSession) -> User:
     await db_session.commit()
     await db_session.refresh(user)
     return user
+
+
+@pytest.fixture(autouse=True)
+def stub_notification_sqs(monkeypatch) -> MagicMock:
+    """Keep notification publishes (OTP, password reset, verification) off real SQS.
+
+    The global producer builds a real boto3 client at import time, so signup /
+    send-otp / forgot-password would otherwise call AWS with whatever
+    credentials the shell has (InvalidClientTokenId, or worse, a real queue).
+    """
+    client = MagicMock()
+    client.send_message.return_value = {"MessageId": "test-message-id"}
+    monkeypatch.setattr(notification_producer, "sqs_client", client)
+    return client
 
 
 @pytest_asyncio.fixture(autouse=True)
