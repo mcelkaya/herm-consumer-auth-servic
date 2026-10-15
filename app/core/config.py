@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Herm Auth Service"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    DEBUG: bool = False
     PORT: int = 8001
     HOST: str = "0.0.0.0"
 
